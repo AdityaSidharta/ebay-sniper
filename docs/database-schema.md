@@ -32,7 +32,7 @@ The application uses multiple DynamoDB tables optimized for different access pat
 | createdAt | Number | - | Unix timestamp of account creation |
 | updatedAt | Number | - | Unix timestamp of last update |
 | ebayAccountId | String | - | Linked eBay account identifier |
-| ebayTokens | Map | - | eBay OAuth tokens (encrypted) |
+| ebayTokens | Map | - | eBay OAuth tokens (encrypted at rest via DynamoDB) |
 | preferences | Map | - | User preferences object |
 | isActive | Boolean | - | Account status |
 

@@ -63,7 +63,7 @@ erDiagram
         string ebayAccountId
         json preferences
         boolean isActive
-        json ebayTokens "encrypted"
+        json ebayTokens "encrypted at rest"
     }
     
     Bids {
@@ -465,8 +465,8 @@ class eBayDataSyncService:
         if not user.ebay_tokens:
             raise ValueError("User has not linked eBay account")
         
-        # Decrypt tokens
-        tokens = await decrypt_ebay_tokens(user.ebay_tokens)
+        # Get tokens (automatically decrypted by DynamoDB)
+        tokens = user.ebay_tokens
         
         # Fetch wishlist from eBay
         wishlist_items = await self.ebay_client.get_wishlist_items(

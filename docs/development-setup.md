@@ -127,7 +127,6 @@ POSTMARK_FROM_EMAIL=noreply@localhost
 
 # Security Keys (Generate new ones)
 JWT_SECRET_KEY=your_jwt_secret_key_min_32_chars
-ENCRYPTION_KEY=your_encryption_key_32_chars
 
 # CORS Configuration
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
@@ -136,9 +135,6 @@ CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 #### Generate Security Keys
 ```bash
 # Generate JWT secret
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-
-# Generate encryption key
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 

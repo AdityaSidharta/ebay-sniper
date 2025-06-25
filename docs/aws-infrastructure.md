@@ -16,7 +16,8 @@ The application uses a serverless architecture leveraging multiple AWS services 
 - **KMS**: Encryption key management
 - **Secrets Manager**: Secure credential storage
 - **CloudWatch**: Logging and monitoring
-- **SES**: Email notifications (via Postmark)
+
+Note: Email notifications are handled by **Postmark** (external service), not AWS SES.
 
 ## AWS SAM Template
 
@@ -171,7 +172,6 @@ ApiFunction:
         USERS_TABLE: !Ref UsersTable
         BIDS_TABLE: !Ref BidsTable
         BID_HISTORY_TABLE: !Ref BidHistoryTable
-        ENCRYPTION_KEY_ID: !Ref EncryptionKey
         USER_POOL_ID: !Ref UserPool
         SECRET_ARN: !Ref EbayCredentials
     Events:
@@ -190,8 +190,6 @@ ApiFunction:
           TableName: !Ref BidsTable
       - DynamoDBCrudPolicy:
           TableName: !Ref BidHistoryTable
-      - KMSDecryptPolicy:
-          KeyId: !Ref EncryptionKey
       - EventBridgeSchedulePolicy:
           ScheduleGroup: !Ref ScheduleGroup
       - Statement:
@@ -216,15 +214,12 @@ BidExecutorFunction:
       Variables:
         BIDS_TABLE: !Ref BidsTable
         BID_HISTORY_TABLE: !Ref BidHistoryTable
-        ENCRYPTION_KEY_ID: !Ref EncryptionKey
         SECRET_ARN: !Ref EbayCredentials
     Policies:
       - DynamoDBCrudPolicy:
           TableName: !Ref BidsTable
       - DynamoDBCrudPolicy:
           TableName: !Ref BidHistoryTable
-      - KMSDecryptPolicy:
-          KeyId: !Ref EncryptionKey
       - Statement:
           Effect: Allow
           Action:
@@ -401,15 +396,16 @@ EncryptionKey:
             AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
           Action: "kms:*"
           Resource: "*"
-        - Sid: Allow Lambda Functions
+        - Sid: Allow DynamoDB Service
           Effect: Allow
           Principal:
-            AWS:
-              - !GetAtt ApiFunction.Role
-              - !GetAtt BidExecutorFunction.Role
+            Service: dynamodb.amazonaws.com
           Action:
             - kms:Decrypt
             - kms:DescribeKey
+            - kms:Encrypt
+            - kms:GenerateDataKey
+            - kms:ReEncrypt*
           Resource: "*"
     Tags:
       - Key: Environment

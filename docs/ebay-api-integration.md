@@ -340,8 +340,8 @@ class MockEbayClient:
 ## Security Considerations
 
 ### Token Storage
-- Always encrypt eBay tokens using AWS KMS
-- Store refresh tokens securely in DynamoDB
+- eBay OAuth tokens are stored in DynamoDB with encryption at rest
+- DynamoDB encryption handles security automatically via KMS
 - Implement token rotation before expiration
 - Never log access tokens or refresh tokens
 
