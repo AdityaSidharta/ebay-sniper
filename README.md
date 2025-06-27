@@ -230,7 +230,6 @@ sam deploy --config-env prod
 - [Development Setup](docs/development-setup.md)
 - [Deployment Guide](docs/deployment-guide.md)
 - [Security Guide](docs/security-guide.md)
-- [Testing Strategy](docs/testing-strategy.md)
 - [eBay API Integration](docs/ebay-api-integration.md)
 - [Database Schema](docs/database-schema.md)
 - [Data Flow](docs/data-flow.md)

@@ -80,11 +80,9 @@ export default function ComponentName({ title, children }: ComponentNameProps) {
 - Use Tailwind's purge configuration for production builds
 
 ## Accessibility
-- Always include proper ARIA labels
 - Ensure keyboard navigation works properly
 - Use semantic HTML elements
 - Maintain proper heading hierarchy
-- Include alt text for all images
 
 ## Common Utilities
 
@@ -194,12 +192,6 @@ amplify publish
 ```
 
 ## AWS Amplify Integration
-
-### Backend Services (if using Amplify Backend)
-- Authentication: Use Amplify Auth with Cognito
-- API: GraphQL with AppSync or REST with API Gateway
-- Storage: S3 for file uploads
-- Database: DynamoDB or RDS via AppSync
 
 ### Frontend Integration
 ```typescript

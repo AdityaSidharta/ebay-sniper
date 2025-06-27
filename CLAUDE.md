@@ -31,7 +31,6 @@ This is a full-stack application, where it uses AWS Services in order to host an
 - AWS API Gateway will be used as the interface layer
 - Amazon DynamoDB will be used as the Database
 - Postmark will be used to send email notification to the User
-- FastAPI will be used for the API Interface
 
 The Language that will be used for the application is as follows:
 
