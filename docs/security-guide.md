@@ -145,7 +145,8 @@ UsersTable:
   Properties:
     SSESpecification:
       SSEEnabled: true
-      KMSMasterKeyId: !Ref EncryptionKey
+      # Uses DynamoDB automatic encryption at rest via KMS
+      # No custom KMS key required - AWS manages encryption automatically
     PointInTimeRecoverySpecification:
       PointInTimeRecoveryEnabled: true
 ```
@@ -163,30 +164,30 @@ S3Bucket:
           BucketKeyEnabled: true
 ```
 
-#### Lambda Environment Variables
+#### Data Storage Security
 ```python
 import boto3
-import os
-from cryptography.fernet import Fernet
+import json
+from typing import Dict, Any
 
-class SecureConfig:
+class SecureDataHandler:
     def __init__(self):
-        self.kms_client = boto3.client('kms')
-        self.encryption_key_id = os.environ['ENCRYPTION_KEY_ID']
+        self.dynamodb = boto3.resource('dynamodb')
+        # DynamoDB handles encryption at rest automatically via KMS
+        # No manual encryption/decryption needed for stored data
     
-    def encrypt_sensitive_data(self, plaintext: str) -> str:
-        """Encrypt sensitive data using KMS"""
-        response = self.kms_client.encrypt(
-            KeyId=self.encryption_key_id,
-            Plaintext=plaintext.encode('utf-8')
-        )
-        return base64.b64encode(response['CiphertextBlob']).decode('utf-8')
+    def store_user_data(self, table_name: str, user_data: Dict[str, Any]) -> None:
+        """Store user data - automatically encrypted by DynamoDB"""
+        table = self.dynamodb.Table(table_name)
+        table.put_item(Item=user_data)
+        # Data is automatically encrypted at rest by DynamoDB
     
-    def decrypt_sensitive_data(self, ciphertext: str) -> str:
-        """Decrypt sensitive data using KMS"""
-        ciphertext_blob = base64.b64decode(ciphertext.encode('utf-8'))
-        response = self.kms_client.decrypt(CiphertextBlob=ciphertext_blob)
-        return response['Plaintext'].decode('utf-8')
+    def retrieve_user_data(self, table_name: str, user_id: str) -> Dict[str, Any]:
+        """Retrieve user data - automatically decrypted by DynamoDB"""
+        table = self.dynamodb.Table(table_name)
+        response = table.get_item(Key={'userId': user_id})
+        # Data is automatically decrypted when retrieved
+        return response.get('Item', {})
 ```
 
 ### Encryption in Transit
@@ -273,6 +274,10 @@ class SecretRotator:
         except Exception as e:
             logger.error(f"Failed to rotate tokens for user {user_id}: {str(e)}")
             raise
+
+# Note: eBay OAuth tokens are stored in DynamoDB user records and are
+# automatically encrypted at rest via DynamoDB's encryption features.
+# No manual encryption/decryption is required in the application code.
 ```
 
 ## Application Security
