@@ -56,19 +56,19 @@ erDiagram
     Bids ||--o{ BidHistory : "tracks"
     
     Users {
-        string userId PK
+        string userId
         string email
         timestamp createdAt
         timestamp updatedAt
         string ebayAccountId
         json preferences
         boolean isActive
-        json ebayTokens "encrypted at rest"
+        json ebayTokens
     }
     
     Bids {
-        string userId PK
-        string bidId SK
+        string userId
+        string bidId
         string ebayItemId
         integer maxBidAmount
         string status
@@ -83,8 +83,8 @@ erDiagram
     }
     
     BidHistory {
-        string userId PK
-        integer timestamp SK
+        string userId
+        integer timestamp
         string historyId
         string originalBidId
         string action

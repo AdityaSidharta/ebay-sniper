@@ -394,8 +394,22 @@ EncryptionKey:
           Effect: Allow
           Principal:
             AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
-          Action: "kms:*"
-          Resource: "*"
+          Action:
+            - kms:Create*
+            - kms:Describe*
+            - kms:Enable*
+            - kms:List*
+            - kms:Put*
+            - kms:Update*
+            - kms:Revoke*
+            - kms:Disable*
+            - kms:Get*
+            - kms:Delete*
+            - kms:TagResource
+            - kms:UntagResource
+            - kms:ScheduleKeyDeletion
+            - kms:CancelKeyDeletion
+          Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*"
         - Sid: Allow DynamoDB Service
           Effect: Allow
           Principal:
@@ -406,7 +420,7 @@ EncryptionKey:
             - kms:Encrypt
             - kms:GenerateDataKey
             - kms:ReEncrypt*
-          Resource: "*"
+          Resource: !Ref EncryptionKey
     Tags:
       - Key: Environment
         Value: !Ref Environment

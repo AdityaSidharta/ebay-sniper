@@ -24,23 +24,210 @@ This guide provides step-by-step instructions for deploying the eBay Sniper appl
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "CloudFormationAccess",
       "Effect": "Allow",
       "Action": [
-        "cloudformation:*",
-        "lambda:*",
-        "apigateway:*",
-        "dynamodb:*",
-        "cognito-idp:*",
-        "kms:*",
-        "iam:*",
-        "logs:*",
-        "events:*",
-        "scheduler:*",
-        "amplify:*",
-        "secretsmanager:*",
-        "s3:*"
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:ValidateTemplate",
+        "cloudformation:GetTemplate"
       ],
-      "Resource": "*"
+      "Resource": [
+        "arn:aws:cloudformation:*:*:stack/ebay-sniper-*/*",
+        "arn:aws:cloudformation:*:aws:transform/Serverless-*"
+      ]
+    },
+    {
+      "Sid": "LambdaAccess",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateFunction",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:DeleteFunction",
+        "lambda:GetFunction",
+        "lambda:ListFunctions",
+        "lambda:AddPermission",
+        "lambda:RemovePermission",
+        "lambda:TagResource",
+        "lambda:UntagResource"
+      ],
+      "Resource": "arn:aws:lambda:*:*:function:ebay-sniper-*"
+    },
+    {
+      "Sid": "APIGatewayAccess",
+      "Effect": "Allow",
+      "Action": [
+        "apigateway:POST",
+        "apigateway:GET",
+        "apigateway:PUT",
+        "apigateway:DELETE",
+        "apigateway:PATCH"
+      ],
+      "Resource": "arn:aws:apigateway:*::/restapis*"
+    },
+    {
+      "Sid": "DynamoDBAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DeleteTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:UpdateTable",
+        "dynamodb:TagResource",
+        "dynamodb:UntagResource",
+        "dynamodb:DescribeTimeToLive",
+        "dynamodb:UpdateTimeToLive"
+      ],
+      "Resource": "arn:aws:dynamodb:*:*:table/ebay-sniper-*"
+    },
+    {
+      "Sid": "CognitoAccess",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:CreateUserPool",
+        "cognito-idp:DeleteUserPool",
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:UpdateUserPool",
+        "cognito-idp:CreateUserPoolClient",
+        "cognito-idp:DeleteUserPoolClient",
+        "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:UpdateUserPoolClient",
+        "cognito-idp:TagResource",
+        "cognito-idp:UntagResource"
+      ],
+      "Resource": "arn:aws:cognito-idp:*:*:userpool/*"
+    },
+    {
+      "Sid": "KMSAccess",
+      "Effect": "Allow",
+      "Action": [
+        "kms:CreateKey",
+        "kms:CreateAlias",
+        "kms:DeleteAlias",
+        "kms:DescribeKey",
+        "kms:GetKeyPolicy",
+        "kms:PutKeyPolicy",
+        "kms:TagResource",
+        "kms:UntagResource"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": ["dynamodb.*.amazonaws.com", "s3.*.amazonaws.com"]
+        }
+      }
+    },
+    {
+      "Sid": "IAMRoleAccess",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:PassRole",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole"
+      ],
+      "Resource": "arn:aws:iam::*:role/ebay-sniper-*"
+    },
+    {
+      "Sid": "LogsAccess",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:DescribeLogGroups",
+        "logs:PutRetentionPolicy",
+        "logs:TagLogGroup",
+        "logs:UntagLogGroup"
+      ],
+      "Resource": "arn:aws:logs:*:*:log-group:/aws/lambda/ebay-sniper-*"
+    },
+    {
+      "Sid": "EventBridgeAccess",
+      "Effect": "Allow",
+      "Action": [
+        "events:PutRule",
+        "events:DeleteRule",
+        "events:DescribeRule",
+        "events:PutTargets",
+        "events:RemoveTargets",
+        "events:TagResource",
+        "events:UntagResource"
+      ],
+      "Resource": "arn:aws:events:*:*:rule/ebay-sniper-*"
+    },
+    {
+      "Sid": "SchedulerAccess",
+      "Effect": "Allow",
+      "Action": [
+        "scheduler:CreateScheduleGroup",
+        "scheduler:DeleteScheduleGroup",
+        "scheduler:GetScheduleGroup",
+        "scheduler:TagResource",
+        "scheduler:UntagResource"
+      ],
+      "Resource": "arn:aws:scheduler:*:*:schedule-group/ebay-sniper-*"
+    },
+    {
+      "Sid": "AmplifyAccess",
+      "Effect": "Allow",
+      "Action": [
+        "amplify:CreateApp",
+        "amplify:DeleteApp",
+        "amplify:GetApp",
+        "amplify:UpdateApp",
+        "amplify:CreateBranch",
+        "amplify:DeleteBranch",
+        "amplify:GetBranch",
+        "amplify:UpdateBranch",
+        "amplify:TagResource",
+        "amplify:UntagResource"
+      ],
+      "Resource": "arn:aws:amplify:*:*:apps/*/branches/*"
+    },
+    {
+      "Sid": "SecretsManagerAccess",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:DeleteSecret",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:UpdateSecret",
+        "secretsmanager:TagResource",
+        "secretsmanager:UntagResource"
+      ],
+      "Resource": "arn:aws:secretsmanager:*:*:secret:ebay-sniper-*"
+    },
+    {
+      "Sid": "S3Access",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning",
+        "s3:GetBucketEncryption",
+        "s3:PutBucketEncryption",
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::ebay-sniper-*",
+        "arn:aws:s3:::ebay-sniper-*/*"
+      ]
     }
   ]
 }

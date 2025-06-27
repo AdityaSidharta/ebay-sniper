@@ -25,8 +25,8 @@ Using the applications, a user should be able to:
 
 This is a full-stack application, where it uses AWS Services in order to host and deploy the application
 
-- AWS Cognito will be used to handle user authentication. See @docs/claude-md-nextjs.md for more details
-- AWS Amplify will be used to handle the front-end. See @docs/claude-md-python-lambda.md for more details
+- AWS Cognito will be used to handle user authentication.
+- AWS Amplify will be used to handle the front-end.
 - AWS Lambda will be used to handle the backend
 - AWS API Gateway will be used as the interface layer
 - Amazon DynamoDB will be used as the Database
@@ -97,7 +97,20 @@ The Language that will be used for the application is as follows:
 ```
 ebay-sniper/
 ├── frontend/                 # Next.js application
+│   ├── pages/               # Next.js pages and API routes
+│   ├── components/          # React components
+│   ├── lib/                 # Utilities and API clients
+│   ├── styles/              # Tailwind CSS styles
+│   └── public/              # Static assets
 ├── backend/                  # Python Lambda functions
+│   ├── src/
+│   │   ├── main.py         # FastAPI application entry point
+│   │   ├── api/            # API route handlers
+│   │   ├── models/         # Data models
+│   │   ├── services/       # Business logic
+│   │   └── utils/          # Helper utilities
+│   ├── template.yaml       # SAM template
+│   └── requirements.txt    # Python dependencies
 ├── infrastructure/           # AWS SAM/CloudFormation templates
 ├── docs/                     # Documentation
 ├── tests/                    # Test suites
@@ -106,12 +119,25 @@ ebay-sniper/
 
 ## Security Requirements
 
-- All eBay tokens must be encrypted using AWS KMS
+- eBay tokens stored in DynamoDB with encryption at rest (automatic via DynamoDB)
+- AWS Secrets Manager for API credentials (eBay App/Dev/Cert IDs, Postmark API key)
 - Implement proper CORS policies
 - Use HTTPS only
 - Validate all user inputs
 - Implement rate limiting per user
 - Log all bid actions for audit trail
+
+## Architecture Notes
+
+### Simplified Encryption
+- DynamoDB handles encryption at rest automatically via KMS
+- No manual token encryption/decryption in application code
+- AWS Secrets Manager for service credentials only
+
+### Rate Limiting
+- Implement per-user rate limiting in FastAPI middleware
+- Track API calls in DynamoDB or Redis cache
+- Respect eBay's 5000 calls/day limit per application
 
 ## eBay Compliance
 
@@ -136,6 +162,28 @@ ebay-sniper/
 - User registration and eBay linking
 - Complete bid lifecycle
 - Scheduled bid execution
+
+## Development Commands
+
+### Backend Commands
+- `pytest tests/` - Run backend tests  
+- `black src/ tests/` - Format Python code
+- `flake8 src/ tests/` - Lint Python code
+- `mypy src/` - Type checking
+- `uvicorn src.main:app --reload` - Start development server
+
+### Frontend Commands  
+- `pnpm dev` - Start development server
+- `pnpm build` - Build for production
+- `pnpm test` - Run tests
+- `pnpm lint` - Lint code
+- `pnpm type-check` - TypeScript checking
+
+### Deployment Commands
+- `sam build` - Build SAM application
+- `sam deploy --config-env dev` - Deploy to development
+- `sam deploy --config-env staging` - Deploy to staging
+- `sam deploy --config-env prod` - Deploy to production
 
 ## Deployment Pipeline
 
@@ -179,6 +227,25 @@ ebay-sniper/
 - Log detailed error information
 - Implement dead letter queues for failed jobs
 
+### Relevant Documents
+- API Specification @docs/api-specification
+- Architecture @docs/architecture.md
+- AWS Infrastructure @docs/aws-infrastructure.md
+- Next JS Specs @docs/frontend.md
+- Python Specs @docs/backend.md
+- Data Flow @docs/data-flow.md
+- Database Schema @docs/database-schema.md
+- Deployment Guide @docs/deployment-guide.md
+- Development Guide @docs/development-setup.md
+- eBay API Integration @docs/ebay-api-integration.md
+- Security Guide @docs/security-guide.md
+- Testing Strategy @docs/testing-strategy.md
+
 ## Coding Guidelines
 
 - Always use descriptive variable names
+- Follow Python PEP 8 style guide for backend code
+- Use TypeScript strict mode for frontend code
+- Implement proper error handling and logging
+- Write comprehensive tests for all features
+- Follow security best practices for data handling

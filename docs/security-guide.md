@@ -123,7 +123,7 @@ class TokenValidator:
         "dynamodb:DeleteItem",
         "dynamodb:Query"
       ],
-      "Resource": "arn:aws:dynamodb:*:*:table/ebay-sniper-*",
+      "Resource": "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/ebay-sniper-*",
       "Condition": {
         "ForAllValues:StringEquals": {
           "dynamodb:LeadingKeys": ["${cognito-identity.amazonaws.com:sub}"]

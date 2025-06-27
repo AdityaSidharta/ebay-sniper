@@ -266,7 +266,7 @@ The schema design ensures users cannot access other users' data through:
    {
      "Effect": "Allow",
      "Action": "dynamodb:Query",
-     "Resource": "arn:aws:dynamodb:*:*:table/ebay-sniper-bids-*",
+     "Resource": "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/ebay-sniper-bids-*",
      "Condition": {
        "ForAllValues:StringEquals": {
          "dynamodb:LeadingKeys": "${cognito-identity.amazon.com:sub}"
