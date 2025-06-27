@@ -237,14 +237,28 @@ class TestUserEndpoints:
             assert data["preferences"]["emailNotifications"] is False
     
     def test_update_user_preferences_validation_error(self, client):
-        """Test user preferences update with invalid data"""
-        response = client.put(
-            "/users/me",
-            json={"preferences": {"invalidField": True}},
-            headers={"Authorization": "Bearer valid-token"}
-        )
+        """Test user preferences update with invalid data - Pydantic handles validation"""
+        # Test multiple validation scenarios in one test since Pydantic is the single validation layer
+        test_cases = [
+            # Invalid preference key
+            ({"preferences": {"invalidField": True}}, "Invalid preference keys"),
+            # Invalid notification type
+            ({"preferences": {"emailNotifications": "not_a_boolean"}}, "emailNotifications must be a boolean"),
+            # Invalid timezone type
+            ({"preferences": {"timezone": 123}}, "timezone must be a string"),
+            # Invalid email format
+            ({"email": "invalid-email"}, "string does not match regex")
+        ]
         
-        assert response.status_code == 422
+        for invalid_data, expected_error in test_cases:
+            response = client.put(
+                "/users/me",
+                json=invalid_data,
+                headers={"Authorization": "Bearer valid-token"}
+            )
+            
+            assert response.status_code == 422
+            assert expected_error.lower() in response.json()["detail"][0]["msg"].lower()
 ```
 
 #### Bid Service Tests
@@ -351,14 +365,57 @@ class TestBidService:
 
 ### Integration Testing
 
+#### Simplified Validation Testing
+With consolidated Pydantic validation, testing is simplified:
+
+```python
+# tests/unit/test_validation.py
+import pytest
+from pydantic import ValidationError
+from src.models.requests import CreateBidRequest, UpdateUserRequest
+
+class TestConsolidatedValidation:
+    """Test single validation layer - no duplicate testing needed"""
+    
+    def test_create_bid_validation_success(self):
+        """Test valid bid creation data"""
+        valid_data = {
+            "ebay_item_id": "123456789",
+            "max_bid_amount": 25000
+        }
+        
+        # Pydantic handles all validation
+        request = CreateBidRequest(**valid_data)
+        assert request.ebay_item_id == "123456789"
+        assert request.max_bid_amount == 25000
+    
+    def test_create_bid_validation_errors(self):
+        """Test all validation scenarios in consolidated tests"""
+        invalid_cases = [
+            # Invalid item ID format
+            ({"ebay_item_id": "abc123", "max_bid_amount": 25000}, "string does not match regex"),
+            # Amount too low
+            ({"ebay_item_id": "123456789", "max_bid_amount": 50}, "ensure this value is greater"),
+            # Amount too high  
+            ({"ebay_item_id": "123456789", "max_bid_amount": 20000000}, "ensure this value is less"),
+            # Missing required field
+            ({"ebay_item_id": "123456789"}, "field required")
+        ]
+        
+        for invalid_data, expected_error in invalid_cases:
+            with pytest.raises(ValidationError) as exc_info:
+                CreateBidRequest(**invalid_data)
+            assert expected_error.lower() in str(exc_info.value).lower()
+```
+
 #### Database Integration Tests
 ```python
 # tests/integration/test_database_integration.py
 import pytest
 import boto3
+import time
 from moto import mock_dynamodb
-from src.repositories.user_repository import UserRepository
-from src.repositories.bid_repository import BidRepository
+from boto3.dynamodb.conditions import Key
 
 @pytest.mark.integration
 class TestDatabaseIntegration:
@@ -402,9 +459,9 @@ class TestDatabaseIntegration:
     @pytest.mark.asyncio
     async def test_user_bid_workflow(self, dynamodb_tables):
         """Test complete user and bid workflow"""
-        # Arrange
-        user_repo = UserRepository(dynamodb_tables['users'])
-        bid_repo = BidRepository(dynamodb_tables['bids'])
+        # Direct DynamoDB operations without repository layer
+        users_table = dynamodb_tables['users']
+        bids_table = dynamodb_tables['bids']
         
         # Create user
         user_data = {
@@ -413,7 +470,7 @@ class TestDatabaseIntegration:
             "preferences": {"emailNotifications": True},
             "isActive": True
         }
-        await user_repo.create_user(user_data)
+        users_table.put_item(Item=user_data)
         
         # Create bid
         bid_data = {
@@ -423,13 +480,17 @@ class TestDatabaseIntegration:
             "maxBidAmount": 20000,
             "status": "PENDING"
         }
-        await bid_repo.create_bid(bid_data)
+        bids_table.put_item(Item=bid_data)
         
         # Act & Assert
-        user = await user_repo.get_user("integration-test-user")
+        user_response = users_table.get_item(Key={'userId': 'integration-test-user'})
+        user = user_response['Item']
         assert user["userId"] == "integration-test-user"
         
-        bids = await bid_repo.get_user_bids("integration-test-user")
+        bids_response = bids_table.query(
+            KeyConditionExpression=Key('userId').eq('integration-test-user')
+        )
+        bids = bids_response['Items']
         assert len(bids) == 1
         assert bids[0]["bidId"] == "integration-test-bid"
 ```

@@ -453,20 +453,22 @@ sequenceDiagram
 ```python
 # eBay data synchronization patterns
 class eBayDataSyncService:
-    def __init__(self, ebay_client, user_repository):
+    def __init__(self, ebay_client):
         self.ebay_client = ebay_client
-        self.user_repository = user_repository
+        self.dynamodb = boto3.resource('dynamodb')
+        self.users_table = self.dynamodb.Table('ebay-sniper-Users')
     
     async def sync_user_wishlist(self, user_id: str) -> List[Dict[str, Any]]:
         """Sync user's eBay wishlist with current auction data"""
         
-        # Get user's eBay tokens
-        user = await self.user_repository.get_user(user_id)
-        if not user.ebay_tokens:
+        # Get user's eBay tokens directly from DynamoDB
+        response = self.users_table.get_item(Key={'userId': user_id})
+        user = response.get('Item')
+        if not user or not user.get('ebayTokens'):
             raise ValueError("User has not linked eBay account")
         
         # Get tokens (automatically decrypted by DynamoDB)
-        tokens = user.ebay_tokens
+        tokens = user['ebayTokens']
         
         # Fetch wishlist from eBay
         wishlist_items = await self.ebay_client.get_wishlist_items(
@@ -757,85 +759,99 @@ class DataTransformer:
         }
 ```
 
-### Data Validation Pipeline
+### Validation Pipeline
 
-#### 1. Input Validation
+#### Consolidated Pydantic Validation
 ```python
-# Comprehensive data validation
-from pydantic import BaseModel, validator, Field
-from typing import Optional, List
+# Single layer validation using Pydantic with FastAPI integration
+from pydantic import BaseModel, Field, validator
+from typing import Optional, Dict, Any
+import boto3
+from boto3.dynamodb.conditions import Key
+import time
 import re
 
-class CreateBidRequestValidator(BaseModel):
-    ebay_item_id: str = Field(..., min_length=1, max_length=20)
-    max_bid_amount: int = Field(..., ge=100, le=10000000)  # $1 to $100,000
+class CreateBidRequest(BaseModel):
+    """Single validation layer handles all input validation"""
+    ebay_item_id: str = Field(..., min_length=1, max_length=20, regex=r'^[0-9]+$')
+    max_bid_amount: int = Field(..., ge=100, le=10000000, description="Amount in cents")
     
-    @validator('ebay_item_id')
-    def validate_ebay_item_id(cls, v):
-        if not re.match(r'^[0-9]+$', v):
-            raise ValueError('eBay item ID must contain only digits')
-        return v
-    
-    @validator('max_bid_amount')
-    def validate_bid_amount(cls, v):
-        if v % 1 != 0:  # Ensure it's a whole number (cents)
-            raise ValueError('Bid amount must be in cents (whole number)')
-        return v
-
-class BidBusinessRuleValidator:
-    def __init__(self, ebay_client, bid_repository):
-        self.ebay_client = ebay_client
-        self.bid_repository = bid_repository
-    
-    async def validate_bid_creation(
-        self, 
-        request: CreateBidRequestValidator,
-        user: User
-    ) -> Dict[str, Any]:
-        """Comprehensive business rule validation"""
-        
-        validation_results = {
-            'valid': True,
-            'errors': [],
-            'warnings': []
+    class Config:
+        schema_extra = {
+            "example": {
+                "ebay_item_id": "123456789",
+                "max_bid_amount": 25000  # $250.00
+            }
         }
-        
-        # Check if item exists and is active
-        try:
-            item_data = await self.ebay_client.get_item_details(
-                request.ebay_item_id,
-                user.ebay_tokens['access_token']
-            )
-        except Exception as e:
-            validation_results['valid'] = False
-            validation_results['errors'].append(f"Unable to fetch item details: {str(e)}")
-            return validation_results
-        
-        # Validate auction timing
-        time_until_end = item_data['end_time'] - time.time()
-        if time_until_end < 60:  # Less than 1 minute
-            validation_results['valid'] = False
-            validation_results['errors'].append("Auction ends too soon to place bid")
-        elif time_until_end < 300:  # Less than 5 minutes
-            validation_results['warnings'].append("Auction ends very soon")
-        
-        # Validate bid amount
-        if request.max_bid_amount <= item_data['current_price']:
-            validation_results['valid'] = False
-            validation_results['errors'].append("Bid amount must be higher than current price")
-        
-        # Check for existing bids
-        existing_bids = await self.bid_repository.get_user_item_bids(
-            user.user_id,
-            request.ebay_item_id
+
+# Simplified business rule validation - only for cross-entity rules
+async def validate_bid_business_rules(
+    request: CreateBidRequest,
+    user_id: str,
+    ebay_client,
+    dynamodb_table
+) -> Dict[str, Any]:
+    """Business validation - only cross-entity rules"""
+    
+    # Check for existing active bids (cross-entity rule)
+    response = dynamodb_table.query(
+        KeyConditionExpression=Key('userId').eq(user_id),
+        FilterExpression=Attr('ebayItemId').eq(request.ebay_item_id) & Attr('status').eq('PENDING')
+    )
+    
+    if response['Items']:
+        raise ValueError("You already have an active bid for this item")
+    
+    # Fetch item data for real-time validation
+    try:
+        item_data = await ebay_client.get_item_details(
+            request.ebay_item_id,
+            user_tokens['access_token']
         )
         
-        active_bids = [bid for bid in existing_bids if bid['status'] == 'PENDING']
-        if active_bids:
-            validation_results['valid'] = False
-            validation_results['errors'].append("You already have an active bid for this item")
+        # Only critical real-time validations
+        time_until_end = item_data['end_time'] - time.time()
+        if time_until_end < 60:
+            raise ValueError("Auction ends too soon to place bid")
         
-        return validation_results
+        if request.max_bid_amount <= item_data['current_price']:
+            raise ValueError("Bid amount must be higher than current price")
+            
+        return item_data
+        
+    except Exception as e:
+        raise ValueError(f"Unable to validate item: {str(e)}")
+
+# FastAPI endpoint with consolidated validation
+@router.post("/bids", response_model=BidResponse, status_code=201)
+async def create_bid(
+    request: CreateBidRequest,  # Pydantic handles all input validation
+    current_user: dict = Depends(get_current_user)
+):
+    """Create bid with single validation layer"""
+    
+    # Only business rule validation needed - Pydantic handled input validation
+    item_data = await validate_bid_business_rules(
+        request, 
+        current_user['sub'], 
+        ebay_client, 
+        bids_table
+    )
+    
+    # Direct DynamoDB operation - no repository layer
+    bid_data = {
+        'bidId': str(uuid.uuid4()),
+        'userId': current_user['sub'],
+        'ebayItemId': request.ebay_item_id,
+        'maxBidAmount': request.max_bid_amount,
+        'status': 'PENDING',
+        'auctionEndTime': item_data['end_time'],
+        'createdAt': int(time.time()),
+        'updatedAt': int(time.time())
+    }
+    
+    bids_table.put_item(Item=bid_data)
+    return BidResponse(**bid_data)
 ```
 
 ## Error Handling and Data Recovery

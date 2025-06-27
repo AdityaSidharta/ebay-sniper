@@ -101,35 +101,15 @@ nano .env.local  # or use your preferred editor
 
 #### Environment Variables (.env.local)
 ```bash
-# Development Environment
-ENVIRONMENT=dev
+# Minimal required configuration for local development
 DEBUG=true
-LOG_LEVEL=DEBUG
-
-# AWS Configuration
-AWS_REGION=us-east-1
-AWS_PROFILE=ebay-sniper-dev
-
-# DynamoDB Configuration (Local)
 DYNAMODB_ENDPOINT=http://localhost:8000
-DYNAMODB_TABLE_PREFIX=ebay-sniper-dev-
-
-# eBay API Configuration (Sandbox)
-EBAY_ENVIRONMENT=sandbox
-EBAY_APP_ID=your_sandbox_app_id
-EBAY_DEV_ID=your_sandbox_dev_id
-EBAY_CERT_ID=your_sandbox_cert_id
-EBAY_REDIRECT_URI=http://localhost:3000/ebay/callback
-
-# Postmark Configuration (Test)
 POSTMARK_API_KEY=your_test_postmark_key
-POSTMARK_FROM_EMAIL=noreply@localhost
+EBAY_APP_ID=your_sandbox_app_id
 
-# Security Keys (Generate new ones)
-JWT_SECRET_KEY=your_jwt_secret_key_min_32_chars
-
-# CORS Configuration
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+# Optional - defaults are provided in code
+CORS_ORIGINS=http://localhost:3000
+AWS_REGION=us-east-1
 ```
 
 #### Generate Security Keys

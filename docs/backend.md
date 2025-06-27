@@ -8,7 +8,7 @@ This is a Python backend API designed to run on AWS Lambda, serving as the backe
 - **Framework**: FastAPI with Mangum adapter (or AWS Lambda Powertools)
 - **Infrastructure**: AWS Lambda + API Gateway
 - **Package Management**: pip with requirements.txt or Poetry
-- **Deployment**: AWS SAM, Serverless Framework, or CDK
+- **Deployment**: AWS SAM
 
 ## Lambda Handler Pattern
 
@@ -156,105 +156,143 @@ def handler(event, context):
 - Set timeout based on expected response times + buffer
 - Monitor Lambda Insights for optimization opportunities
 
-### Environment Variables
+### Configuration
 ```python
 # src/core/config.py
-from pydantic import BaseSettings
-from typing import List
+import os
 
-class Settings(BaseSettings):
-    # API Configuration
-    PROJECT_NAME: str = "Backend API"
-    VERSION: str = "1.0.0"
-    DEBUG: bool = False
-    
-    # CORS
-    ALLOWED_ORIGINS: List[str] = ["https://your-amplify-app.com"]
-    
-    # AWS Resources
-    DYNAMODB_TABLE_NAME: str
-    S3_BUCKET_NAME: str
-    
-    # Authentication
-    JWT_SECRET_KEY: str
-    JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
-    # External Services
-    OPENAI_API_KEY: str = None
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+# Simple configuration with defaults
+PROJECT_NAME = "eBay Sniper API"
+VERSION = "1.0.0"
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
-settings = Settings()
+# CORS - defaults to common origins
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+
+# Required environment variables (set by Lambda)
+DYNAMODB_TABLE_PREFIX = os.getenv("DYNAMODB_TABLE_PREFIX", "ebay-sniper-dev-")
+POSTMARK_API_KEY = os.getenv("POSTMARK_API_KEY")  # Required from Secrets Manager
+EBAY_APP_ID = os.getenv("EBAY_APP_ID")  # Required from Secrets Manager
 ```
 
 ## API Design Patterns
 
 ### RESTful Endpoints
 ```python
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from typing import List, Optional
+from pydantic import BaseModel, Field
+import boto3
+from boto3.dynamodb.conditions import Key, Attr
 
 router = APIRouter()
 
+# Pydantic models handle ALL validation - no duplicate layers
+class ItemCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., max_length=2000)
+    price: int = Field(..., ge=1, le=10000000)  # $0.01 to $100,000
+
+class ItemResponse(BaseModel):
+    id: str
+    title: str
+    description: str
+    price: int
+    created_at: int
+    user_id: str
+
 @router.get("/items", response_model=List[ItemResponse])
 async def list_items(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    search: Optional[str] = None,
-    current_user: User = Depends(get_current_user)
+    skip: int = Query(0, ge=0, description="Number of items to skip"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items to return"),
+    search: Optional[str] = Query(None, max_length=100),
+    current_user: dict = Depends(get_current_user)
 ):
-    """List items with pagination and search"""
-    return await item_service.list_items(skip, limit, search)
+    """List items with pagination and search - validation handled by FastAPI"""
+    # Direct DynamoDB operations with safe query patterns
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table('items')
+    
+    # Safe query - no additional validation needed
+    query_params = {'Limit': limit}
+    if skip > 0:
+        # Implementation for pagination
+        pass
+    
+    response = table.scan(**query_params)
+    return response.get('Items', [])
 
 @router.post("/items", response_model=ItemResponse, status_code=201)
 async def create_item(
-    item: ItemCreate,
-    current_user: User = Depends(get_current_user)
+    item: ItemCreate,  # Pydantic handles all validation automatically
+    current_user: dict = Depends(get_current_user)
 ):
-    """Create a new item"""
-    return await item_service.create_item(item, current_user.id)
+    """Create a new item - no duplicate validation layers"""
+    # Direct DynamoDB operation - Pydantic already validated input
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table('items')
+    
+    item_data = {
+        'id': str(uuid.uuid4()),
+        'user_id': current_user['sub'],
+        'title': item.title,
+        'description': item.description,
+        'price': item.price,
+        'created_at': int(time.time())
+    }
+    
+    # Safe operation - no additional validation needed
+    table.put_item(Item=item_data)
+    return ItemResponse(**item_data)
 ```
 
-### Authentication Pattern
+### Authentication (API Gateway Handles JWT)
+Since API Gateway with Cognito Authorizer handles JWT validation, authentication is simplified:
+
 ```python
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+from fastapi import Depends, HTTPException, status, Request
+from typing import Dict, Any
+import boto3
 
-security = HTTPBearer()
-
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> User:
-    """Validate JWT token and return current user"""
-    try:
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM]
-        )
-        user_id = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication credentials"
-            )
-    except JWTError:
+async def get_current_user(request: Request) -> Dict[str, Any]:
+    """Extract user from API Gateway JWT context - no manual validation needed"""
+    # API Gateway automatically validates JWT and injects user context
+    event_context = getattr(request.state, 'aws_event', {})
+    authorizer_context = event_context.get('requestContext', {}).get('authorizer', {})
+    
+    # Extract validated user information from API Gateway
+    user_id = authorizer_context.get('claims', {}).get('sub')
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials"
+            detail="User not authenticated"
         )
     
-    user = await user_service.get_user(user_id)
-    if user is None:
+    # Return user context - no database lookup needed for basic auth
+    return {
+        'sub': user_id,
+        'email': authorizer_context.get('claims', {}).get('email'),
+        'cognito:username': authorizer_context.get('claims', {}).get('cognito:username')
+    }
+
+async def get_current_user_full(request: Request) -> Dict[str, Any]:
+    """Get full user data when needed - direct DynamoDB operation"""
+    basic_user = await get_current_user(request)
+    
+    # Direct DynamoDB lookup when full user data is needed
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(os.getenv('USERS_TABLE'))
+    
+    response = table.get_item(Key={'userId': basic_user['sub']})
+    user_data = response.get('Item')
+    
+    if not user_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            detail="User profile not found"
         )
-    return user
+    
+    return user_data
 ```
 
 ## Database Patterns
@@ -483,12 +521,9 @@ black src/ tests/
 flake8 src/ tests/
 mypy src/
 
-# Deployment (SAM)
+# Deployment
 sam build
 sam deploy --guided
-
-# Deployment (Serverless)
-serverless deploy --stage prod
 ```
 
 ## Important Notes

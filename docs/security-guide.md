@@ -58,53 +58,29 @@ The eBay Sniper application implements a defense-in-depth security strategy acro
 
 ### JWT Token Security
 
-#### Token Validation Implementation
-```python
-import jwt
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+#### API Gateway Authorization
+AWS API Gateway with Cognito Authorizer handles JWT token validation automatically:
 
-class TokenValidator:
-    def __init__(self, user_pool_id: str, region: str):
-        self.user_pool_id = user_pool_id
-        self.region = region
-        self.jwks_url = f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}/.well-known/jwks.json"
-    
-    async def validate_token(self, token: str) -> Optional[Dict[str, Any]]:
-        """Validate JWT token and return payload if valid"""
-        try:
-            # Decode header to get key ID
-            header = jwt.get_unverified_header(token)
-            key_id = header.get('kid')
-            
-            # Get signing key from JWKS
-            signing_key = await self.get_signing_key(key_id)
-            
-            # Validate token
-            payload = jwt.decode(
-                token,
-                signing_key,
-                algorithms=['RS256'],
-                audience=self.user_pool_client_id,
-                issuer=f"https://cognito-idp.{self.region}.amazonaws.com/{self.user_pool_id}"
-            )
-            
-            # Additional validation
-            if payload.get('token_use') != 'access':
-                raise jwt.InvalidTokenError('Invalid token use')
-            
-            if datetime.fromtimestamp(payload.get('exp', 0)) <= datetime.utcnow():
-                raise jwt.ExpiredSignatureError('Token has expired')
-            
-            return payload
-            
-        except jwt.ExpiredSignatureError:
-            logger.warning("Token has expired")
-            return None
-        except jwt.InvalidTokenError as e:
-            logger.warning(f"Invalid token: {str(e)}")
-            return None
+```yaml
+HttpApi:
+  Type: AWS::Serverless::HttpApi
+  Properties:
+    Auth:
+      Authorizers:
+        CognitoAuthorizer:
+          JwtConfiguration:
+            issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+            audience:
+              - !Ref UserPoolClient
+          IdentitySource: "$request.header.Authorization"
 ```
+
+**Benefits of API Gateway Authorization:**
+- Automatic JWT signature validation
+- Token expiration checking
+- Issuer and audience validation
+- No custom code required
+- Better performance (validated at edge)
 
 ### Role-Based Access Control
 
@@ -160,7 +136,6 @@ S3Bucket:
       ServerSideEncryptionConfiguration:
         - ServerSideEncryptionByDefault:
             SSEAlgorithm: aws:kms
-            KMSMasterKeyID: !Ref EncryptionKey
           BucketKeyEnabled: true
 ```
 
@@ -284,31 +259,31 @@ class SecretRotator:
 
 ### Input Validation
 
-#### Pydantic Models for Validation
+#### Consolidated Pydantic Validation
+All validation is handled through Pydantic models with built-in FastAPI integration:
+
 ```python
-from pydantic import BaseModel, validator, Field
-from typing import Optional
+from pydantic import BaseModel, Field, validator
+from typing import Optional, Dict, Any
 import re
 
 class CreateBidRequest(BaseModel):
-    ebay_item_id: str = Field(..., min_length=1, max_length=20)
-    max_bid_amount: int = Field(..., ge=100, le=10000000)  # $1.00 to $100,000
+    """Single source of truth for bid creation validation"""
+    ebay_item_id: str = Field(..., min_length=1, max_length=20, regex=r'^[0-9]+$')
+    max_bid_amount: int = Field(..., ge=100, le=10000000, description="Amount in cents ($1.00 to $100,000)")
     
-    @validator('ebay_item_id')
-    def validate_ebay_item_id(cls, v):
-        if not re.match(r'^[0-9]+$', v):
-            raise ValueError('eBay item ID must contain only digits')
-        return v
-    
-    @validator('max_bid_amount')
-    def validate_bid_amount(cls, v):
-        if v <= 0:
-            raise ValueError('Bid amount must be positive')
-        return v
+    class Config:
+        schema_extra = {
+            "example": {
+                "ebay_item_id": "123456789",
+                "max_bid_amount": 25000  # $250.00
+            }
+        }
 
 class UpdateUserRequest(BaseModel):
+    """Consolidated user update validation"""
     email: Optional[str] = Field(None, regex=r'^[^@]+@[^@]+\.[^@]+$')
-    preferences: Optional[dict] = None
+    preferences: Optional[Dict[str, Any]] = None
     
     @validator('preferences')
     def validate_preferences(cls, v):
@@ -319,38 +294,75 @@ class UpdateUserRequest(BaseModel):
         if not set(v.keys()).issubset(allowed_keys):
             raise ValueError('Invalid preference keys')
         
+        # Validate specific preference types
+        for key, value in v.items():
+            if key.endswith('Notifications') and not isinstance(value, bool):
+                raise ValueError(f'{key} must be a boolean')
+            if key == 'timezone' and not isinstance(value, str):
+                raise ValueError('timezone must be a string')
+        
         return v
+
+class UserResponse(BaseModel):
+    """Standardized user response model"""
+    userId: str
+    email: str
+    createdAt: int
+    updatedAt: int
+    preferences: Dict[str, Any]
+    isActive: bool
+
+class BidResponse(BaseModel):
+    """Standardized bid response model"""
+    bidId: str
+    userId: str
+    ebayItemId: str
+    maxBidAmount: int
+    status: str
+    auctionEndTime: int
+    createdAt: int
+    updatedAt: int
+    itemTitle: Optional[str] = None
+    itemImageUrl: Optional[str] = None
+    currentPrice: Optional[int] = None
 ```
+
+**Validation Strategy:**
+- FastAPI automatically validates requests using Pydantic models
+- No duplicate validation layers in service or repository code
+- Business logic validation only for cross-entity rules (e.g., duplicate bids)
+- DynamoDB operations use safe query patterns by default
 
 #### SQL Injection Prevention
 ```python
 # Using DynamoDB expressions to prevent injection
+import boto3
 from boto3.dynamodb.conditions import Key, Attr
+from typing import Optional, List, Dict, Any
 
-class UserRepository:
-    def __init__(self, table):
-        self.table = table
-    
-    async def get_user_bids(self, user_id: str, status: Optional[str] = None):
-        """Safely query user bids with optional status filter"""
-        try:
-            key_condition = Key('userId').eq(user_id)
-            
-            if status:
-                # Use attribute condition for filtering
-                filter_condition = Attr('status').eq(status)
-                response = self.table.query(
-                    KeyConditionExpression=key_condition,
-                    FilterExpression=filter_condition
-                )
-            else:
-                response = self.table.query(KeyConditionExpression=key_condition)
-            
-            return response.get('Items', [])
-            
-        except Exception as e:
-            logger.error(f"Error querying user bids: {str(e)}")
-            raise
+async def get_user_bids(user_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Safely query user bids with optional status filter"""
+    try:
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table('ebay-sniper-Bids')
+        
+        key_condition = Key('userId').eq(user_id)
+        
+        if status:
+            # Use attribute condition for filtering
+            filter_condition = Attr('status').eq(status)
+            response = table.query(
+                KeyConditionExpression=key_condition,
+                FilterExpression=filter_condition
+            )
+        else:
+            response = table.query(KeyConditionExpression=key_condition)
+        
+        return response.get('Items', [])
+        
+    except Exception as e:
+        logger.error(f"Error querying user bids: {str(e)}")
+        raise
 ```
 
 ### XSS Prevention

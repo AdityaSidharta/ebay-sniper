@@ -80,7 +80,6 @@ UsersTable:
       PointInTimeRecoveryEnabled: true
     SSESpecification:
       SSEEnabled: true
-      KMSMasterKeyId: !Ref EncryptionKey
     StreamSpecification:
       StreamViewType: NEW_AND_OLD_IMAGES
     Tags:
@@ -113,7 +112,6 @@ BidsTable:
       PointInTimeRecoveryEnabled: true
     SSESpecification:
       SSEEnabled: true
-      KMSMasterKeyId: !Ref EncryptionKey
     TimeToLiveSpecification:
       AttributeName: ttl
       Enabled: true
@@ -145,7 +143,6 @@ BidHistoryTable:
       PointInTimeRecoveryEnabled: true
     SSESpecification:
       SSEEnabled: true
-      KMSMasterKeyId: !Ref EncryptionKey
     TimeToLiveSpecification:
       AttributeName: ttl
       Enabled: true
@@ -381,59 +378,6 @@ SchedulerExecutionRole:
 
 ### Security Configuration
 
-#### KMS Encryption Key
-```yaml
-EncryptionKey:
-  Type: AWS::KMS::Key
-  Properties:
-    Description: Encryption key for eBay Sniper application
-    KeyPolicy:
-      Version: '2012-10-17'
-      Statement:
-        - Sid: Enable IAM User Permissions
-          Effect: Allow
-          Principal:
-            AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
-          Action:
-            - kms:Create*
-            - kms:Describe*
-            - kms:Enable*
-            - kms:List*
-            - kms:Put*
-            - kms:Update*
-            - kms:Revoke*
-            - kms:Disable*
-            - kms:Get*
-            - kms:Delete*
-            - kms:TagResource
-            - kms:UntagResource
-            - kms:ScheduleKeyDeletion
-            - kms:CancelKeyDeletion
-          Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*"
-        - Sid: Allow DynamoDB Service
-          Effect: Allow
-          Principal:
-            Service: dynamodb.amazonaws.com
-          Action:
-            - kms:Decrypt
-            - kms:DescribeKey
-            - kms:Encrypt
-            - kms:GenerateDataKey
-            - kms:ReEncrypt*
-          Resource: !Ref EncryptionKey
-    Tags:
-      - Key: Environment
-        Value: !Ref Environment
-      - Key: Service
-        Value: ebay-sniper
-
-EncryptionKeyAlias:
-  Type: AWS::KMS::Alias
-  Properties:
-    AliasName: !Sub "alias/${AWS::StackName}-encryption-key"
-    TargetKeyId: !Ref EncryptionKey
-```
-
 #### Secrets Manager
 ```yaml
 EbayCredentials:
@@ -448,7 +392,6 @@ EbayCredentials:
         "cert_id": "REPLACE_WITH_CERT_ID",
         "environment": "${Environment}"
       }
-    KmsKeyId: !Ref EncryptionKey
     Tags:
       - Key: Environment
         Value: !Ref Environment
@@ -482,14 +425,12 @@ ApiLogGroup:
   Properties:
     LogGroupName: !Sub "/aws/lambda/${ApiFunction}"
     RetentionInDays: 30
-    KmsKeyId: !GetAtt EncryptionKey.Arn
 
 BidExecutorLogGroup:
   Type: AWS::Logs::LogGroup
   Properties:
     LogGroupName: !Sub "/aws/lambda/${BidExecutorFunction}"
     RetentionInDays: 30
-    KmsKeyId: !GetAtt EncryptionKey.Arn
 ```
 
 #### CloudWatch Alarms
