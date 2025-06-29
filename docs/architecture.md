@@ -25,7 +25,9 @@ graph TB
     TokenRefreshLambda[Token Refresh<br/>Lambda Function]
     
     %% Data Layer
-    DynamoDB[Amazon DynamoDB<br/>User Data, Bids, BidHistory]
+    UsersTable[Users Table<br/>DynamoDB]
+    BidsTable[Bids Table<br/>DynamoDB]
+    BidHistoryTable[BidHistory Table<br/>DynamoDB]
     
     %% External Services
     eBayAPI[eBay API<br/>Wishlist, Bidding, Auctions]
@@ -47,20 +49,23 @@ graph TB
     APIGateway --> BidHistoryLambda
     
     %% Individual Lambda function interactions
-    UserMgmtLambda --> DynamoDB
-    EbayOAuthLambda --> DynamoDB
+    UserMgmtLambda --> UsersTable
+    EbayOAuthLambda --> UsersTable
     EbayOAuthLambda --> eBayAPI
-    WishlistSyncLambda --> DynamoDB
+    WishlistSyncLambda --> UsersTable
     WishlistSyncLambda --> eBayAPI
-    BidMgmtLambda --> DynamoDB
+    BidMgmtLambda --> BidsTable
+    BidMgmtLambda --> BidHistoryTable
     BidMgmtLambda --> Scheduler
-    BidHistoryLambda --> DynamoDB
-    BidExecutorLambda --> DynamoDB
+    BidHistoryLambda --> BidHistoryTable
+    BidExecutorLambda --> BidsTable
+    BidExecutorLambda --> BidHistoryTable
+    BidExecutorLambda --> UsersTable
     BidExecutorLambda --> eBayAPI
     BidExecutorLambda --> Postmark
-    NotificationLambda --> DynamoDB
+    NotificationLambda --> UsersTable
     NotificationLambda --> Postmark
-    TokenRefreshLambda --> DynamoDB
+    TokenRefreshLambda --> UsersTable
     TokenRefreshLambda --> eBayAPI
     
     %% Scheduled bidding flow
@@ -82,7 +87,7 @@ graph TB
     class Cognito,APIGateway aws
     class UserMgmtLambda,EbayOAuthLambda,WishlistSyncLambda,BidMgmtLambda,BidHistoryLambda lambda
     class BidExecutorLambda,NotificationLambda,TokenRefreshLambda lambda
-    class DynamoDB data
+    class UsersTable,BidsTable,BidHistoryTable data
     class eBayAPI,Postmark external
     class Scheduler scheduler
 ```

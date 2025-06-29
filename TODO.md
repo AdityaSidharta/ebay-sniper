@@ -1,0 +1,1 @@
+- How does bid history get updated?
