@@ -231,7 +231,6 @@ sam deploy --config-env prod
 - [Security Guide](docs/security-guide.md)
 - [eBay API Integration](docs/ebay-api-integration.md)
 - [Database Schema](docs/database-schema.md)
-- [Data Flow](docs/data-flow.md)
 
 ## 🔧 Commands Reference
 

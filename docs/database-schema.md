@@ -14,10 +14,8 @@ The application uses multiple DynamoDB tables optimized for different access pat
 
 - **Partition Key Strategy**: Use entity identifiers (userId, ebayItemId) as partition keys for even distribution
 - **Sort Key Strategy**: Use composite sort keys for efficient range queries
-- **GSI Design**: Avoid hot partitions by using random suffixes and time buckets
 - **Data Types**: Use Unix timestamps (Number) for efficient sorting and filtering
 - **TTL**: Enable automatic cleanup of old/expired data
-- **Cost Optimization**: Design GSIs to minimize unused capacity and storage
 
 ## Table Structures
 
@@ -36,8 +34,6 @@ The application uses multiple DynamoDB tables optimized for different access pat
 | preferences | Map | - | User preferences object |
 | isActive | Boolean | - | Account status |
 
-**Global Secondary Indexes**:
-- **EmailIndex**: GSI on `email` attribute for email-based lookups
 
 ### Bids Table
 

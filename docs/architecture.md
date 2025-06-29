@@ -107,9 +107,8 @@ graph TB
 4. **Unlink Account**: Frontend → API Gateway → eBay OAuth Lambda → DynamoDB → Frontend
 
 ### Wishlist Management
-1. **Sync Wishlist**: Frontend → API Gateway → Wishlist Sync Lambda → eBay API → Frontend
-2. **Get Wishlist Items**: Frontend → API Gateway → Wishlist Sync Lambda → DynamoDB → Frontend
-3. **Get Item Details**: Frontend → API Gateway → Wishlist Sync Lambda → eBay API → Frontend
+1**Get Wishlist Items**: Frontend → API Gateway → Wishlist Sync Lambda → eBay API → Frontend
+2**Get Item Details**: Frontend → API Gateway → Wishlist Sync Lambda → eBay API → DynamoDB → Frontend
 
 ### Bid Management
 1. **Create Bid**: Frontend → API Gateway → Bid Management Lambda → DynamoDB → EventBridge Scheduler
