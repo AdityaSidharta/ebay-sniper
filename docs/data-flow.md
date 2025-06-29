@@ -17,8 +17,15 @@ graph TB
     %% API Gateway Layer
     APIGateway[🚪 AWS API Gateway]
     
-    %% Application Layer
-    Lambda[⚡ AWS Lambda Functions]
+    %% Application Layer - Individual Lambda Functions
+    UserMgmtLambda[👤 User Management Lambda]
+    EbayOAuthLambda[🔗 eBay OAuth Lambda]
+    WishlistSyncLambda[📋 Wishlist Sync Lambda]
+    BidMgmtLambda[💰 Bid Management Lambda]
+    BidHistoryLambda[📊 Bid History Lambda]
+    BidExecutorLambda[⚡ Bid Executor Lambda]
+    NotificationLambda[📧 Notification Lambda]
+    TokenRefreshLambda[🔑 Token Refresh Lambda]
     
     %% Data Layer
     DynamoDB[(📊 DynamoDB Tables)]
@@ -35,14 +42,40 @@ graph TB
     %% Data Flow Connections
     User --> Frontend
     Frontend --> APIGateway
-    APIGateway --> Lambda
-    Lambda --> DynamoDB
-    Lambda --> eBayAPI
-    Lambda --> Postmark
-    Lambda --> SecretsManager
-    Lambda --> EventBridge
     Cognito --> APIGateway
-    EventBridge --> Lambda
+    
+    %% API Gateway to Lambda Functions
+    APIGateway --> UserMgmtLambda
+    APIGateway --> EbayOAuthLambda
+    APIGateway --> WishlistSyncLambda
+    APIGateway --> BidMgmtLambda
+    APIGateway --> BidHistoryLambda
+    
+    %% Lambda Function Data Connections
+    UserMgmtLambda --> DynamoDB
+    EbayOAuthLambda --> DynamoDB
+    EbayOAuthLambda --> eBayAPI
+    EbayOAuthLambda --> SecretsManager
+    WishlistSyncLambda --> DynamoDB
+    WishlistSyncLambda --> eBayAPI
+    WishlistSyncLambda --> SecretsManager
+    BidMgmtLambda --> DynamoDB
+    BidMgmtLambda --> EventBridge
+    BidHistoryLambda --> DynamoDB
+    BidExecutorLambda --> DynamoDB
+    BidExecutorLambda --> eBayAPI
+    BidExecutorLambda --> SecretsManager
+    NotificationLambda --> DynamoDB
+    NotificationLambda --> Postmark
+    NotificationLambda --> SecretsManager
+    TokenRefreshLambda --> DynamoDB
+    TokenRefreshLambda --> eBayAPI
+    TokenRefreshLambda --> SecretsManager
+    
+    %% Scheduled Executions
+    EventBridge --> BidExecutorLambda
+    EventBridge --> TokenRefreshLambda
+    
 ```
 
 ## Core Data Entities
@@ -245,81 +278,242 @@ export function BidForm({ item }: { item: WishlistItem }) {
 
 ### API Request Processing
 
-#### 1. Request Lifecycle
+#### 1. Request Lifecycle (Individual Lambda Functions)
 ```mermaid
 sequenceDiagram
     participant Client
     participant APIGateway
-    participant Lambda
     participant Cognito
+    participant UserMgmtLambda
+    participant BidMgmtLambda
+    participant EbayOAuthLambda
     participant DynamoDB
     participant eBayAPI
+    participant EventBridge
     
-    Client->>APIGateway: HTTP Request
+    Note over Client,EventBridge: User Management Flow
+    Client->>APIGateway: GET /users/profile
     APIGateway->>Cognito: Validate JWT Token
     Cognito-->>APIGateway: Token Valid
-    APIGateway->>Lambda: Invoke Function
-    Lambda->>DynamoDB: Query/Update Data
-    DynamoDB-->>Lambda: Data Response
-    Lambda->>eBayAPI: External API Call
-    eBayAPI-->>Lambda: API Response
-    Lambda-->>APIGateway: Response
-    APIGateway-->>Client: HTTP Response
+    APIGateway->>UserMgmtLambda: Invoke Function
+    UserMgmtLambda->>DynamoDB: Get User Data
+    DynamoDB-->>UserMgmtLambda: User Profile
+    UserMgmtLambda-->>APIGateway: Response
+    APIGateway-->>Client: User Profile Data
+    
+    Note over Client,EventBridge: Bid Creation Flow
+    Client->>APIGateway: POST /bids
+    APIGateway->>Cognito: Validate JWT Token
+    Cognito-->>APIGateway: Token Valid
+    APIGateway->>BidMgmtLambda: Invoke Function
+    BidMgmtLambda->>DynamoDB: Create Bid Record
+    BidMgmtLambda->>EventBridge: Schedule Bid Execution
+    EventBridge-->>BidMgmtLambda: Schedule Confirmed
+    BidMgmtLambda-->>APIGateway: Response
+    APIGateway-->>Client: Bid Created
+    
+    Note over Client,EventBridge: eBay OAuth Flow
+    Client->>APIGateway: POST /ebay/auth/callback
+    APIGateway->>Cognito: Validate JWT Token
+    Cognito-->>APIGateway: Token Valid
+    APIGateway->>EbayOAuthLambda: Invoke Function
+    EbayOAuthLambda->>eBayAPI: Exchange Code for Tokens
+    eBayAPI-->>EbayOAuthLambda: OAuth Tokens
+    EbayOAuthLambda->>DynamoDB: Store Encrypted Tokens
+    EbayOAuthLambda-->>APIGateway: Response
+    APIGateway-->>Client: Account Linked
 ```
 
-#### 2. Data Processing Pipeline
-```python
-# Request processing pipeline
-from typing import Dict, Any
-from fastapi import Request, Depends
+#### 2. Individual Lambda Function Data Processing
 
-async def process_bid_request(
-    request: CreateBidRequest,
-    current_user: User = Depends(get_current_user)
-) -> BidResponse:
-    """Complete bid creation data flow"""
+##### Bid Management Lambda Processing
+```python
+# Bid Management Lambda - handles bid CRUD operations
+from aws_lambda_powertools import Logger, Tracer
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver
+from aws_lambda_powertools.event_handler.exceptions import BadRequestError, ConflictError
+
+logger = Logger()
+tracer = Tracer()
+app = APIGatewayRestResolver()
+
+@app.post("/bids")
+@tracer.capture_method
+def create_bid():
+    """Bid Management Lambda - Create new bid"""
     
-    # 1. Input validation
-    validated_data = await validate_bid_request(request)
+    # 1. Parse and validate input - single validation layer
+    raw_body = app.current_event.json_body
+    request = CreateBidRequest(**raw_body)  # Pydantic validation
     
-    # 2. External data fetching
-    item_details = await fetch_ebay_item_details(
-        validated_data.ebay_item_id,
-        current_user.ebay_tokens
-    )
+    # Get current user from JWT context (already validated by API Gateway)
+    current_user = get_current_user(app)
     
-    # 3. Business logic validation
-    await validate_bid_business_rules(validated_data, item_details)
+    # 2. Business logic validation - only cross-entity rules
+    validate_bid_business_rules(request, current_user['sub'])
     
-    # 4. Data transformation
-    bid_entity = transform_to_bid_entity(
-        validated_data, 
-        item_details, 
-        current_user
-    )
+    # 3. Create bid entity
+    bid_entity = {
+        'bidId': str(uuid.uuid4()),
+        'userId': current_user['sub'],
+        'ebayItemId': request.ebay_item_id,
+        'maxBidAmount': request.max_bid_amount,
+        'status': 'PENDING',
+        'createdAt': int(time.time()),
+        'updatedAt': int(time.time())
+    }
     
-    # 5. Database operations
-    async with database_transaction():
-        # Create bid record
-        created_bid = await bid_repository.create_bid(bid_entity)
+    # 4. Database transaction
+    try:
+        # Create bid and history records atomically
+        execute_bid_transaction(bid_entity)
         
-        # Create history record
-        await bid_history_repository.create_history_entry(
-            created_bid, 
-            action="CREATE"
+        # Schedule bid execution via EventBridge
+        schedule_id = schedule_bid_execution(bid_entity)
+        
+        # Update bid with scheduler ID
+        update_bid_scheduler_id(bid_entity['bidId'], schedule_id)
+        
+    except ClientError as e:
+        handle_database_error(e)
+    
+    return BidResponse(**bid_entity).dict()
+```
+
+##### eBay OAuth Lambda Processing
+```python
+# eBay OAuth Lambda - handles OAuth flow
+@app.post("/ebay/auth/callback")
+@tracer.capture_method
+def handle_oauth_callback():
+    """eBay OAuth Lambda - Handle OAuth callback"""
+    
+    # 1. Validate OAuth callback
+    callback_request = OAuthCallbackRequest(**app.current_event.json_body)
+    current_user = get_current_user(app)
+    
+    # 2. Exchange code for tokens
+    try:
+        tokens = await ebay_client.exchange_code_for_tokens(
+            callback_request.code,
+            callback_request.state
         )
         
-        # Schedule bid execution
-        job_id = await schedule_bid_execution(created_bid)
+        # 3. Store encrypted tokens in DynamoDB
+        user_update = {
+            'userId': current_user['sub'],
+            'ebayTokens': tokens,  # DynamoDB encrypts automatically
+            'ebayAccountId': tokens.get('ebay_account_id'),
+            'linkedAt': int(time.time()),
+            'updatedAt': int(time.time())
+        }
         
-        # Update bid with scheduler job ID
-        await bid_repository.update_bid(
-            created_bid.bid_id, 
-            {"scheduler_job_id": job_id}
-        )
+        users_table.put_item(Item=user_update)
+        
+        return EbayAccountStatus(
+            isLinked=True,
+            accountId=tokens.get('ebay_account_id'),
+            linkedAt=user_update['linkedAt'],
+            tokenExpiresAt=tokens.get('expires_at')
+        ).dict()
+        
+    except EbayAPIError as e:
+        raise BadRequestError(f"OAuth exchange failed: {str(e)}")
+```
+
+##### Wishlist Sync Lambda Processing
+```python
+# Wishlist Sync Lambda - retrieves and syncs wishlist items
+@app.get("/wishlist/items")
+@tracer.capture_method
+def get_wishlist_items():
+    """Wishlist Sync Lambda - Get synced wishlist items"""
     
-    # 6. Response transformation
-    return transform_to_response(created_bid)
+    current_user = get_current_user(app)
+    
+    # 1. Get user's eBay tokens
+    user_data = get_user_with_ebay_tokens(current_user['sub'])
+    if not user_data.get('ebayTokens'):
+        raise BadRequestError("eBay account not linked")
+    
+    # 2. Fetch wishlist from eBay API
+    try:
+        wishlist_items = await ebay_client.get_wishlist_items(
+            user_data['ebayTokens']['access_token']
+        )
+        
+        # 3. Filter for active auctions
+        active_items = filter_active_auctions(wishlist_items)
+        
+        # 4. Transform to internal format
+        transformed_items = [
+            WishlistItem(**transform_ebay_item(item))
+            for item in active_items
+        ]
+        
+        return WishlistResponse(
+            items=transformed_items,
+            lastSyncAt=int(time.time()),
+            totalItems=len(transformed_items)
+        ).dict()
+        
+    except EbayAPIError as e:
+        if e.is_rate_limited():
+            raise ServiceError("eBay API rate limit exceeded")
+        raise ServiceError(f"eBay API error: {str(e)}")
+```
+
+##### Bid Executor Lambda Processing
+```python
+# Bid Executor Lambda - executes scheduled bids
+from aws_lambda_powertools.utilities.typing import LambdaContext
+
+@tracer.capture_lambda_handler
+def lambda_handler(event: dict, context: LambdaContext) -> dict:
+    """Bid Executor Lambda - Execute scheduled bid"""
+    
+    # 1. Parse EventBridge scheduler event
+    bid_execution_event = BidExecutionEvent(**event)
+    
+    # 2. Get bid details and user tokens
+    bid_data = get_bid_details(bid_execution_event.bid_id, bid_execution_event.user_id)
+    user_tokens = get_user_ebay_tokens(bid_execution_event.user_id)
+    
+    # 3. Validate bid is still executable
+    if bid_data['status'] != 'PENDING':
+        logger.warning(f"Bid {bid_execution_event.bid_id} not in pending status")
+        return {"status": "SKIPPED", "reason": "Bid not pending"}
+    
+    # 4. Execute bid via eBay API
+    try:
+        # Wait until 5 seconds before auction end
+        wait_until_optimal_bid_time(bid_execution_event.auction_end_time)
+        
+        # Place bid
+        bid_result = await ebay_client.place_bid(
+            bid_execution_event.ebay_item_id,
+            bid_execution_event.max_bid_amount,
+            user_tokens['access_token']
+        )
+        
+        # 5. Update bid status and create history
+        update_bid_status(bid_execution_event.bid_id, 'PLACED', bid_result)
+        create_bid_history_record(bid_execution_event, 'PLACE', bid_result)
+        
+        # 6. Trigger notification via SNS
+        publish_bid_notification(bid_execution_event, bid_result)
+        
+        return BidExecutionResult(
+            bidId=bid_execution_event.bid_id,
+            success=True,
+            ebayBidId=bid_result.get('bid_id'),
+            executedAt=int(time.time())
+        ).dict()
+        
+    except Exception as e:
+        logger.error(f"Bid execution failed: {str(e)}")
+        update_bid_status(bid_execution_event.bid_id, 'FAILED', {'error': str(e)})
+        return {"status": "FAILED", "error": str(e)}
 ```
 
 ### Database Access Patterns
@@ -763,7 +957,7 @@ class DataTransformer:
 
 #### Consolidated Pydantic Validation
 ```python
-# Single layer validation using Pydantic with FastAPI integration
+# Single layer validation using Pydantic with Lambda PowerTools integration
 from pydantic import BaseModel, Field, validator
 from typing import Optional, Dict, Any
 import boto3
@@ -822,16 +1016,20 @@ async def validate_bid_business_rules(
     except Exception as e:
         raise ValueError(f"Unable to validate item: {str(e)}")
 
-# FastAPI endpoint with consolidated validation
-@router.post("/bids", response_model=BidResponse, status_code=201)
-async def create_bid(
-    request: CreateBidRequest,  # Pydantic handles all input validation
-    current_user: dict = Depends(get_current_user)
-):
+# Lambda PowerTools endpoint with consolidated validation
+@app.post("/bids")
+@tracer.capture_method
+def create_bid():
     """Create bid with single validation layer"""
+    # Parse and validate request body
+    raw_body = app.current_event.json_body
+    request = CreateBidRequest(**raw_body)  # Pydantic handles all input validation
+    
+    # Get current user from JWT context
+    current_user = get_current_user(app)
     
     # Only business rule validation needed - Pydantic handled input validation
-    item_data = await validate_bid_business_rules(
+    item_data = validate_bid_business_rules(
         request, 
         current_user['sub'], 
         ebay_client, 
@@ -851,7 +1049,7 @@ async def create_bid(
     }
     
     bids_table.put_item(Item=bid_data)
-    return BidResponse(**bid_data)
+    return BidResponse(**bid_data).dict()
 ```
 
 ## Error Handling and Data Recovery
@@ -1003,110 +1201,6 @@ class ConsistencyManager:
         action = compensation_actions.get(operation)
         if action:
             await action(data)
-```
-
-## Performance Optimization
-
-### Data Caching Strategies
-
-#### 1. Multi-Layer Caching
-```python
-# Comprehensive caching strategy
-from typing import Dict, Any, Optional
-import redis
-import json
-
-class CacheManager:
-    def __init__(self, redis_client: redis.Redis):
-        self.redis = redis_client
-        self.cache_layers = {
-            'l1': {'ttl': 60, 'prefix': 'l1:'},      # Short-term cache
-            'l2': {'ttl': 300, 'prefix': 'l2:'},     # Medium-term cache
-            'l3': {'ttl': 3600, 'prefix': 'l3:'}     # Long-term cache
-        }
-    
-    async def get_cached_data(
-        self, 
-        key: str, 
-        layer: str = 'l2'
-    ) -> Optional[Dict[str, Any]]:
-        """Get data from specified cache layer"""
-        
-        cache_key = f"{self.cache_layers[layer]['prefix']}{key}"
-        
-        try:
-            cached_data = self.redis.get(cache_key)
-            if cached_data:
-                return json.loads(cached_data)
-        except Exception as e:
-            logger.warning(f"Cache read error for {cache_key}: {str(e)}")
-        
-        return None
-    
-    async def set_cached_data(
-        self, 
-        key: str, 
-        data: Dict[str, Any],
-        layer: str = 'l2',
-        custom_ttl: Optional[int] = None
-    ) -> None:
-        """Set data in specified cache layer"""
-        
-        cache_config = self.cache_layers[layer]
-        cache_key = f"{cache_config['prefix']}{key}"
-        ttl = custom_ttl or cache_config['ttl']
-        
-        try:
-            self.redis.setex(
-                cache_key, 
-                ttl, 
-                json.dumps(data, default=str)
-            )
-        except Exception as e:
-            logger.warning(f"Cache write error for {cache_key}: {str(e)}")
-    
-    async def invalidate_cache_pattern(self, pattern: str) -> None:
-        """Invalidate cache entries matching pattern"""
-        
-        try:
-            keys = self.redis.keys(pattern)
-            if keys:
-                self.redis.delete(*keys)
-        except Exception as e:
-            logger.error(f"Cache invalidation error for pattern {pattern}: {str(e)}")
-
-# Usage in data flow
-class OptimizedDataService:
-    def __init__(self, cache_manager, data_repository):
-        self.cache = cache_manager
-        self.repository = data_repository
-    
-    async def get_user_bids_optimized(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get user bids with multi-layer caching"""
-        
-        # Try L1 cache first (most recent data)
-        cache_key = f"user_bids:{user_id}"
-        cached_bids = await self.cache.get_cached_data(cache_key, 'l1')
-        
-        if cached_bids:
-            return cached_bids
-        
-        # Try L2 cache
-        cached_bids = await self.cache.get_cached_data(cache_key, 'l2')
-        
-        if cached_bids:
-            # Promote to L1 cache
-            await self.cache.set_cached_data(cache_key, cached_bids, 'l1')
-            return cached_bids
-        
-        # Fetch from database
-        bids = await self.repository.get_user_bids(user_id)
-        
-        # Cache in both layers
-        await self.cache.set_cached_data(cache_key, bids, 'l1')
-        await self.cache.set_cached_data(cache_key, bids, 'l2')
-        
-        return bids
 ```
 
 ## Monitoring and Observability

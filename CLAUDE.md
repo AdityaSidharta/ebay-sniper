@@ -75,7 +75,7 @@ The Language that will be used for the application is as follows:
 - POSTMARK_FROM_EMAIL
 
 ### Encryption
-- EBAY_TOKENS_KMS_KEY_ID
+- eBay tokens are encrypted automatically by DynamoDB and AWS Secrets Manager
 
 ## Development Environment Setup
 
@@ -103,7 +103,7 @@ ebay-sniper/
 │   └── public/              # Static assets
 ├── backend/                  # Python Lambda functions
 │   ├── src/
-│   │   ├── main.py         # FastAPI application entry point
+│   │   ├── main.py         # Lambda PowerTools application entry point
 │   │   ├── api/            # API route handlers
 │   │   ├── models/         # Data models
 │   │   ├── services/       # Business logic
@@ -129,13 +129,12 @@ ebay-sniper/
 ## Architecture Notes
 
 ### Simplified Encryption
-- DynamoDB handles encryption at rest automatically via KMS
+- DynamoDB handles encryption at rest automatically
 - No manual token encryption/decryption in application code
 - AWS Secrets Manager for service credentials only
 
 ### Rate Limiting
-- Implement per-user rate limiting in FastAPI middleware
-- Track API calls in DynamoDB or Redis cache
+- Implement per-user rate limiting in Lambda PowerTools middleware
 - Respect eBay's 5000 calls/day limit per application
 
 ## eBay Compliance
@@ -166,9 +165,9 @@ ebay-sniper/
 
 ### Backend Commands
 - `pytest tests/` - Run backend tests  
-- `black src/ tests/` - Format Python code
-- `flake8 src/ tests/` - Lint Python code
-- `mypy src/` - Type checking
+- `ruff format src/ tests/` - Format Python code
+- `ruff check src/ tests/` - Lint Python code  
+- `ty src/` - Type checking
 - `uvicorn src.main:app --reload` - Start development server
 
 ### Frontend Commands  

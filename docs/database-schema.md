@@ -191,7 +191,7 @@ query(
 get_item(Key={'userId': user_id, 'bidId': bid_id})
 
 # Note: Without GSIs, these queries require alternative approaches:
-# - Scheduled jobs: Use DynamoDB Streams or scan operations
+# - Scheduled jobs: Use EventBridge scheduled executions
 # - Item-specific bids: Store ebayItemId in bid records for application-level filtering
 ```
 
@@ -234,7 +234,6 @@ query(
 ### Encryption
 - **At Rest**: Enable DynamoDB encryption at rest
 - **In Transit**: All API calls use HTTPS/TLS
-- **Sensitive Data**: Encrypt eBay tokens using AWS KMS
 
 ### Access Control
 - **IAM Policies**: Least privilege access for Lambda functions

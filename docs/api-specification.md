@@ -1,6 +1,6 @@
 # API Specification
 
-This document defines the complete REST API specification for the eBay Sniper application. The API is built using FastAPI and deployed on AWS Lambda with API Gateway.
+This document defines the complete REST API specification for the eBay Sniper application. The API uses individual AWS Lambda functions for each endpoint, deployed via API Gateway with single responsibility design.
 
 ## Base Configuration
 
@@ -29,11 +29,36 @@ Content-Type: application/json
 }
 ```
 
-## User Management
+## Lambda Function Architecture
 
-### GET /users/me
+The eBay Sniper application uses **8 individual Lambda functions** with single responsibility design:
+
+### **API Endpoint Lambda Functions** (5):
+- **User Management Lambda**: `/users/*` endpoints
+- **eBay OAuth Lambda**: `/ebay/auth/*` endpoints  
+- **Wishlist Sync Lambda**: `/wishlist/*` endpoints
+- **Bid Management Lambda**: `/bids/*` endpoints
+- **Bid History Lambda**: `/bid-history/*` endpoints
+
+### **Background/Scheduled Lambda Functions** (3):
+- **Bid Executor Lambda**: Executes scheduled bids and determines outcomes (triggered by EventBridge)
+- **Notification Handler Lambda**: Sends email notifications (invoked by Bid Executor)
+- **Token Refresh Lambda**: Refreshes eBay OAuth tokens (triggered by EventBridge daily)
+
+## API Endpoints Documentation
+
+The following sections document the HTTP endpoints handled by the 5 API Lambda functions:
+
+---
+
+## User Management Lambda
+
+Handles user profile CRUD operations and preference management.
+
+### GET /users/profile
 Get current user profile information.
 
+**Lambda Function**: `user-management`  
 **Headers**: Requires authentication
 
 **Response 200**:
@@ -43,7 +68,6 @@ Get current user profile information.
   "email": "user@example.com",
   "createdAt": 1640995200,
   "updatedAt": 1640995200,
-  "ebayAccountId": "ebay-user-123",
   "preferences": {
     "emailNotifications": true,
     "bidWinNotifications": true,
@@ -54,20 +78,57 @@ Get current user profile information.
 }
 ```
 
-### PUT /users/me
-Update current user profile and preferences.
+**Error Responses**:
+- `404`: User not found
+- `401`: Unauthorized
 
+### PUT /users/profile
+Update current user profile.
+
+**Lambda Function**: `user-management`  
 **Headers**: Requires authentication
 
 **Request Body**:
 ```json
 {
+  "email": "newemail@example.com"
+}
+```
+
+**Response 200**:
+```json
+{
+  "userId": "uuid-string",
+  "email": "newemail@example.com",
+  "updatedAt": 1640995300,
   "preferences": {
-    "emailNotifications": false,
+    "emailNotifications": true,
     "bidWinNotifications": true,
     "bidLossNotifications": true,
-    "timezone": "America/Los_Angeles"
-  }
+    "timezone": "America/New_York"
+  },
+  "isActive": true
+}
+```
+
+**Error Responses**:
+- `400`: Invalid email format
+- `409`: Email already exists
+- `404`: User not found
+
+### PUT /users/preferences
+Update user notification preferences.
+
+**Lambda Function**: `user-management`  
+**Headers**: Requires authentication
+
+**Request Body**:
+```json
+{
+  "emailNotifications": false,
+  "bidWinNotifications": true,
+  "bidLossNotifications": true,
+  "timezone": "America/Los_Angeles"
 }
 ```
 
@@ -82,178 +143,254 @@ Update current user profile and preferences.
     "bidWinNotifications": true,
     "bidLossNotifications": true,
     "timezone": "America/Los_Angeles"
-  }
+  },
+  "isActive": true
 }
 ```
 
-### DELETE /users/me
+**Error Responses**:
+- `400`: Invalid preference values
+- `404`: User not found
+
+### DELETE /users/account
 Delete current user account and all associated data.
 
+**Lambda Function**: `user-management`  
 **Headers**: Requires authentication
 
 **Response 204**: No content
 
-## eBay Integration
+**Error Responses**:
+- `404`: User not found
 
-### POST /ebay/auth/link
-Initiate eBay account linking process.
+---
 
+## eBay OAuth Lambda
+
+Manages eBay account linking, OAuth authorization flow, and token management.
+
+### GET /ebay/auth/url
+Generate eBay OAuth authorization URL.
+
+**Lambda Function**: `ebay-oauth`  
 **Headers**: Requires authentication
 
 **Response 200**:
 ```json
 {
-  "authUrl": "https://auth.ebay.com/oauth2/authorize?client_id=...",
+  "authUrl": "https://auth.sandbox.ebay.com/oauth2/authorize?client_id=...",
   "state": "random-state-string"
 }
 ```
 
-### POST /ebay/auth/callback
-Complete eBay OAuth flow and store tokens.
+**Error Responses**:
+- `500`: Failed to generate auth URL
 
+### POST /ebay/auth/callback
+Handle eBay OAuth callback and exchange code for tokens.
+
+**Lambda Function**: `ebay-oauth`  
 **Headers**: Requires authentication
 
 **Request Body**:
 ```json
 {
-  "code": "ebay-auth-code",
-  "state": "random-state-string"
+  "code": "authorization-code-from-ebay",
+  "state": "state-string-from-auth-url"
 }
 ```
 
 **Response 200**:
 ```json
 {
-  "success": true,
-  "ebayAccountId": "ebay-user-123",
-  "linkedAt": 1640995200
+  "isLinked": true,
+  "accountId": "ebay-user-123",
+  "linkedAt": 1640995200,
+  "tokenExpiresAt": 1640995200
 }
 ```
 
-### DELETE /ebay/auth/unlink
-Unlink eBay account from user profile.
+**Error Responses**:
+- `400`: Invalid OAuth code or state
+- `401`: OAuth authorization failed
+- `409`: eBay account already linked
+- `500`: Token exchange failed
 
-**Headers**: Requires authentication
+### GET /ebay/auth/status
+Check current eBay account linking status.
 
-**Response 204**: No content
-
-### GET /ebay/account/status
-Check eBay account connection status.
-
+**Lambda Function**: `ebay-oauth`  
 **Headers**: Requires authentication
 
 **Response 200**:
 ```json
 {
   "isLinked": true,
-  "ebayAccountId": "ebay-user-123",
-  "tokenStatus": "valid",
+  "accountId": "ebay-user-123",
   "linkedAt": 1640995200,
-  "lastSync": 1640995300
+  "tokenExpiresAt": 1640995200
 }
 ```
 
-## eBay Wishlist Integration
+### DELETE /ebay/auth/unlink
+Unlink eBay account from user profile.
 
-### GET /ebay/wishlist
-Get current user's eBay wishlist items that are currently active for bidding.
-
+**Lambda Function**: `ebay-oauth`  
 **Headers**: Requires authentication
+
+**Response 204**: No content
+
+**Error Responses**:
+- `404`: No eBay account linked
+
+---
+
+## Wishlist Sync Lambda
+
+Retrieves and syncs eBay wishlist items, filtering for active auctions.
+
+### GET /wishlist/items
+Get synchronized wishlist items.
+
+**Lambda Function**: `wishlist-sync`  
+**Headers**: Requires authentication
+
+**Query Parameters**:
+- `limit` (optional): Number of items to return (default: 20, max: 100)
+- `offset` (optional): Pagination offset (default: 0)
 
 **Response 200**:
 ```json
 {
-  "wishlistItems": [
+  "items": [
     {
       "ebayItemId": "123456789",
-      "title": "Vintage Watch Collection",
-      "description": "Rare vintage watches...",
+      "title": "Vintage Camera",
       "currentPrice": 15000,
       "endTime": 1640995200,
-      "imageUrls": [
-        "https://i.ebayimg.com/image1.jpg"
-      ],
+      "imageUrl": "https://i.ebayimg.com/...",
+      "condition": "Used",
       "sellerInfo": {
-        "sellerId": "seller123",
-        "sellerName": "VintageDealer",
-        "feedbackScore": 1500,
+        "sellerId": "vintage_seller",
+        "feedbackScore": 1250,
         "feedbackPercentage": 99.5
       },
-      "categoryId": "jewelry-watches",
-      "condition": "used",
-      "location": "New York, NY",
-      "shippingCost": 1500,
-      "isActive": true,
-      "addedToWishlistAt": 1640990000
+      "isAuctionActive": true
     }
   ],
-  "total": 15
+  "lastSyncAt": 1640995100,
+  "totalItems": 15
 }
 ```
 
-### GET /ebay/wishlist/{itemId}
-Get detailed information about a specific eBay wishlist item.
+**Error Responses**:
+- `401`: eBay account not linked
+- `403`: eBay API rate limit exceeded
+- `404`: User not found
+- `500`: eBay API error
 
+### GET /wishlist/items/{itemId}
+Get specific item details from wishlist.
+
+**Lambda Function**: `wishlist-sync`  
 **Headers**: Requires authentication
 
 **Path Parameters**:
-- `itemId` (string): eBay item ID
+- `itemId`: eBay item ID
 
 **Response 200**:
 ```json
 {
   "ebayItemId": "123456789",
-  "title": "Vintage Watch Collection",
-  "description": "Detailed description...",
+  "title": "Vintage Camera",
   "currentPrice": 15000,
   "endTime": 1640995200,
-  "imageUrls": [
-    "https://i.ebayimg.com/image1.jpg"
-  ],
+  "imageUrl": "https://i.ebayimg.com/...",
+  "condition": "Used",
   "sellerInfo": {
-    "sellerId": "seller123",
-    "sellerName": "VintageDealer",
-    "feedbackScore": 1500,
+    "sellerId": "vintage_seller",
+    "feedbackScore": 1250,
     "feedbackPercentage": 99.5
   },
-  "categoryId": "jewelry-watches",
-  "condition": "used",
-  "location": "New York, NY",
-  "shippingCost": 1500,
-  "isActive": true,
-  "addedToWishlistAt": 1640990000
+  "isAuctionActive": true
 }
 ```
 
-## Bid Management
+**Error Responses**:
+- `404`: Item not found in wishlist
+- `401`: eBay account not linked
+- `500`: eBay API error
+
+---
+
+## Bid Management Lambda
+
+Handles bid CRUD operations and schedules bid execution.
+
+### POST /bids
+Create a new bid for an auction item.
+
+**Lambda Function**: `bid-management`  
+**Headers**: Requires authentication
+
+**Request Body**:
+```json
+{
+  "ebayItemId": "123456789",
+  "maxBidAmount": 25000
+}
+```
+
+**Response 200**:
+```json
+{
+  "bidId": "bid-uuid-string",
+  "userId": "user-uuid-string",
+  "ebayItemId": "123456789",
+  "maxBidAmount": 25000,
+  "status": "PENDING",
+  "auctionEndTime": 1640995200,
+  "createdAt": 1640990000,
+  "updatedAt": 1640990000,
+  "itemTitle": "Vintage Camera",
+  "itemImageUrl": "https://i.ebayimg.com/...",
+  "currentPrice": 20000
+}
+```
+
+**Error Responses**:
+- `400`: Invalid bid amount or item ID
+- `404`: Item not found
+- `409`: Bid already exists for this item
+- `500`: Database or scheduler error
 
 ### GET /bids
-Get current user's bids with filtering options.
+List user's active bids.
 
+**Lambda Function**: `bid-management`  
 **Headers**: Requires authentication
 
 **Query Parameters**:
-- `status` (string, optional): Filter by status (PENDING, PLACED, WON, LOST, CANCELLED)
-- `limit` (number, optional): Results limit (default: 20, max: 100)
-- `offset` (number, optional): Results offset (default: 0)
+- `status` (optional): Filter by bid status (PENDING, PLACED, WON, LOST, CANCELLED)
+- `limit` (optional): Number of bids to return (default: 20, max: 100)
+- `offset` (optional): Pagination offset (default: 0)
 
 **Response 200**:
 ```json
 {
   "bids": [
     {
-      "bidId": "bid-uuid-123",
-      "userId": "user-uuid-456",
+      "bidId": "bid-uuid-string",
+      "userId": "user-uuid-string",
       "ebayItemId": "123456789",
-      "maxBidAmount": 20000,
+      "maxBidAmount": 25000,
       "status": "PENDING",
       "auctionEndTime": 1640995200,
       "createdAt": 1640990000,
       "updatedAt": 1640990000,
-      "schedulerJobId": "scheduler-job-123",
-      "itemTitle": "Vintage Watch Collection",
-      "itemImageUrl": "https://i.ebayimg.com/image1.jpg",
-      "currentPrice": 15000
+      "itemTitle": "Vintage Camera",
+      "itemImageUrl": "https://i.ebayimg.com/...",
+      "currentPrice": 20000
     }
   ],
   "pagination": {
@@ -265,140 +402,121 @@ Get current user's bids with filtering options.
 }
 ```
 
-### POST /bids
-Create a new bid for an eBay auction.
-
-**Headers**: Requires authentication
-
-**Request Body**:
-```json
-{
-  "ebayItemId": "123456789",
-  "maxBidAmount": 20000
-}
-```
-
-**Response 201**:
-```json
-{
-  "bidId": "bid-uuid-123",
-  "userId": "user-uuid-456",
-  "ebayItemId": "123456789",
-  "maxBidAmount": 20000,
-  "status": "PENDING",
-  "auctionEndTime": 1640995200,
-  "createdAt": 1640990000,
-  "schedulerJobId": "scheduler-job-123",
-  "itemTitle": "Vintage Watch Collection",
-  "itemImageUrl": "https://i.ebayimg.com/image1.jpg",
-  "currentPrice": 15000
-}
-```
-
 ### GET /bids/{bidId}
-Get details of a specific bid.
+Get specific bid details.
 
+**Lambda Function**: `bid-management`  
 **Headers**: Requires authentication
 
 **Path Parameters**:
-- `bidId` (string): Bid UUID
+- `bidId`: Unique bid identifier
 
 **Response 200**:
 ```json
 {
-  "bidId": "bid-uuid-123",
-  "userId": "user-uuid-456",
-  "ebayItemId": "123456789",
-  "maxBidAmount": 20000,
-  "status": "PENDING",
-  "auctionEndTime": 1640995200,
-  "createdAt": 1640990000,
-  "updatedAt": 1640990000,
-  "schedulerJobId": "scheduler-job-123",
-  "itemTitle": "Vintage Watch Collection",
-  "itemImageUrl": "https://i.ebayimg.com/image1.jpg",
-  "currentPrice": 15000
-}
-```
-
-### PUT /bids/{bidId}
-Update an existing bid (only pending bids can be updated).
-
-**Headers**: Requires authentication
-
-**Path Parameters**:
-- `bidId` (string): Bid UUID
-
-**Request Body**:
-```json
-{
-  "maxBidAmount": 25000
-}
-```
-
-**Response 200**:
-```json
-{
-  "bidId": "bid-uuid-123",
-  "userId": "user-uuid-456",
+  "bidId": "bid-uuid-string",
+  "userId": "user-uuid-string",
   "ebayItemId": "123456789",
   "maxBidAmount": 25000,
   "status": "PENDING",
   "auctionEndTime": 1640995200,
-  "updatedAt": 1640991000,
-  "schedulerJobId": "scheduler-job-456",
-  "itemTitle": "Vintage Watch Collection",
-  "currentPrice": 15000
+  "createdAt": 1640990000,
+  "updatedAt": 1640990000,
+  "itemTitle": "Vintage Camera",
+  "itemImageUrl": "https://i.ebayimg.com/...",
+  "currentPrice": 20000
 }
 ```
 
-### DELETE /bids/{bidId}
-Cancel a pending bid.
+**Error Responses**:
+- `404`: Bid not found
 
+### PUT /bids/{bidId}
+Update bid amount.
+
+**Lambda Function**: `bid-management`  
 **Headers**: Requires authentication
 
 **Path Parameters**:
-- `bidId` (string): Bid UUID
+- `bidId`: Unique bid identifier
 
-**Response 204**: No content
-
-## Bid History
-
-### GET /bids/history
-Get current user's bid history.
-
-**Headers**: Requires authentication
-
-**Query Parameters**:
-- `limit` (number, optional): Results limit (default: 50, max: 100)
-- `offset` (number, optional): Results offset (default: 0)
+**Request Body**:
+```json
+{
+  "maxBidAmount": 30000
+}
+```
 
 **Response 200**:
 ```json
 {
-  "history": [
+  "bidId": "bid-uuid-string",
+  "userId": "user-uuid-string",
+  "ebayItemId": "123456789",
+  "maxBidAmount": 30000,
+  "status": "PENDING",
+  "auctionEndTime": 1640995200,
+  "createdAt": 1640990000,
+  "updatedAt": 1640991000,
+  "itemTitle": "Vintage Camera",
+  "itemImageUrl": "https://i.ebayimg.com/...",
+  "currentPrice": 20000
+}
+```
+
+**Error Responses**:
+- `400`: Invalid bid amount
+- `404`: Bid not found
+- `409`: Cannot update bid in current status
+- `500`: Database or scheduler error
+
+### DELETE /bids/{bidId}
+Cancel a pending bid.
+
+**Lambda Function**: `bid-management`  
+**Headers**: Requires authentication
+
+**Path Parameters**:
+- `bidId`: Unique bid identifier
+
+**Response 204**: No content
+
+**Error Responses**:
+- `404`: Bid not found
+- `409`: Cannot cancel bid in current status
+- `500`: Database or scheduler error
+
+---
+
+## Bid History Lambda
+
+Queries and retrieves historical bid data with pagination and filtering.
+
+### GET /bid-history
+Get user's bid history.
+
+**Lambda Function**: `bid-history`  
+**Headers**: Requires authentication
+
+**Query Parameters**:
+- `action` (optional): Filter by action type (CREATE, UPDATE, CANCEL, PLACE, WIN, LOSE)
+- `startDate` (optional): Start date filter (Unix timestamp)
+- `endDate` (optional): End date filter (Unix timestamp)
+- `limit` (optional): Number of records to return (default: 20, max: 100)
+- `offset` (optional): Pagination offset (default: 0)
+
+**Response 200**:
+```json
+{
+  "items": [
     {
-      "historyId": "history-uuid-123",
-      "userId": "user-uuid-456",
-      "originalBidId": "bid-uuid-123",
+      "historyId": "1640990000#CREATE#bid-uuid",
+      "originalBidId": "bid-uuid-string",
       "action": "CREATE",
       "timestamp": 1640990000,
       "details": {
-        "originalAmount": 20000
-      },
-      "ebayItemId": "123456789",
-      "bidAmount": 20000,
-      "finalPrice": null
-    },
-    {
-      "historyId": "history-uuid-124",
-      "userId": "user-uuid-456",
-      "originalBidId": "bid-uuid-123",
-      "action": "UPDATE",
-      "timestamp": 1640991000,
-      "details": {
-        "oldAmount": 20000,
-        "newAmount": 25000
+        "bidAmount": 25000,
+        "reason": "User created new bid"
       },
       "ebayItemId": "123456789",
       "bidAmount": 25000,
@@ -406,49 +524,62 @@ Get current user's bid history.
     }
   ],
   "pagination": {
-    "total": 15,
-    "limit": 50,
+    "total": 25,
+    "limit": 20,
     "offset": 0,
-    "hasMore": false
+    "hasMore": true
   }
 }
 ```
 
-### GET /bids/{bidId}/history
-Get history timeline for a specific bid.
+### GET /bid-history/{bidId}
+Get history for a specific bid.
 
+**Lambda Function**: `bid-history`  
 **Headers**: Requires authentication
 
 **Path Parameters**:
-- `bidId` (string): Bid UUID
+- `bidId`: Original bid identifier
 
 **Response 200**:
 ```json
 {
-  "bidId": "bid-uuid-123",
-  "history": [
+  "items": [
     {
-      "historyId": "history-uuid-123",
+      "historyId": "1640990000#CREATE#bid-uuid",
+      "originalBidId": "bid-uuid-string",
       "action": "CREATE",
       "timestamp": 1640990000,
       "details": {
-        "originalAmount": 20000
+        "bidAmount": 25000,
+        "reason": "User created new bid"
       },
-      "bidAmount": 20000
+      "ebayItemId": "123456789",
+      "bidAmount": 25000,
+      "finalPrice": null
     },
     {
-      "historyId": "history-uuid-124",
-      "action": "UPDATE",
-      "timestamp": 1640991000,
+      "historyId": "1640995000#PLACE#bid-uuid",
+      "originalBidId": "bid-uuid-string",
+      "action": "PLACE",
+      "timestamp": 1640995000,
       "details": {
-        "oldAmount": 20000,
-        "newAmount": 25000
+        "bidAmount": 25000,
+        "ebayBidId": "ebay-bid-123",
+        "executedAt": 1640995000
       },
-      "bidAmount": 25000
+      "ebayItemId": "123456789",
+      "bidAmount": 25000,
+      "finalPrice": 25000
     }
   ]
 }
 ```
+
+**Error Responses**:
+- `404`: No history found for bid
+
+---
 
 ## System Endpoints
 
@@ -461,32 +592,33 @@ Health check endpoint (public, no authentication required).
   "status": "healthy",
   "timestamp": 1640995200,
   "version": "1.0.0",
+  "environment": "production",
+  "lambdaFunctions": {
+    "userManagement": "healthy",
+    "ebayOAuth": "healthy",
+    "wishlistSync": "healthy",
+    "bidManagement": "healthy",
+    "bidHistory": "healthy",
+    "bidExecutor": "healthy",
+    "notificationHandler": "healthy",
+    "tokenRefresh": "healthy"
+  },
   "services": {
-    "database": "healthy",
-    "ebay_api": "healthy",
-    "email_service": "healthy"
+    "dynamodb": "healthy",
+    "ebayApi": "healthy",
+    "postmark": "healthy",
+    "secretsManager": "healthy",
+    "eventBridge": "healthy"
   }
 }
 ```
 
-### GET /metrics
-System metrics (requires admin authentication).
+**Notes**:
+- The health check monitors all 8 Lambda functions including background/scheduled functions
+- Background Lambda functions are checked via CloudWatch metrics and last execution status
+- API endpoint Lambda functions are checked via direct invocation
 
-**Headers**: Requires admin authentication
-
-**Response 200**:
-```json
-{
-  "metrics": {
-    "active_users": 1250,
-    "pending_bids": 3420,
-    "successful_bids_today": 45,
-    "failed_bids_today": 3,
-    "api_requests_per_minute": 85
-  },
-  "timestamp": 1640995200
-}
-```
+---
 
 ## Error Responses
 

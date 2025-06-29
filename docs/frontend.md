@@ -114,10 +114,10 @@ frontend:
   phases:
     preBuild:
       commands:
-        - npm ci
+        - pnpm install
     build:
       commands:
-        - npm run build
+        - pnpm run build
   artifacts:
     baseDirectory: .next
     files:
@@ -171,19 +171,19 @@ module.exports = nextConfig
 ## Key Commands
 ```bash
 # Development
-npm run dev
+pnpm dev
 
 # Build (local testing of Amplify build)
-npm run build
+pnpm build
 
 # Production (local)
-npm start
+pnpm start
 
 # Type checking
-npm run type-check
+pnpm type-check
 
 # Linting
-npm run lint
+pnpm lint
 
 # Amplify CLI commands (if using)
 amplify init

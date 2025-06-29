@@ -13,7 +13,6 @@ The application uses a serverless architecture leveraging multiple AWS services 
 - **Cognito**: User authentication and authorization
 - **EventBridge**: Scheduled bid execution
 - **Amplify**: Frontend hosting and deployment
-- **KMS**: Encryption key management
 - **Secrets Manager**: Secure credential storage
 - **CloudWatch**: Logging and monitoring
 
@@ -54,7 +53,6 @@ Globals:
       Variables:
         ENVIRONMENT: !Ref Environment
         CORS_ORIGINS: !Sub "${AmplifyApp}.amplifyapp.com"
-        DYNAMODB_TABLE_PREFIX: !Sub "${AWS::StackName}-"
         POSTMARK_API_KEY: !Ref PostmarkApiKey
         EBAY_APP_ID: !Ref EbayAppId
     Layers:
@@ -80,8 +78,6 @@ UsersTable:
       PointInTimeRecoveryEnabled: true
     SSESpecification:
       SSEEnabled: true
-    StreamSpecification:
-      StreamViewType: NEW_AND_OLD_IMAGES
     Tags:
       - Key: Environment
         Value: !Ref Environment
@@ -132,12 +128,12 @@ BidHistoryTable:
     AttributeDefinitions:
       - AttributeName: userId
         AttributeType: S
-      - AttributeName: timestamp
-        AttributeType: N
+      - AttributeName: historyId
+        AttributeType: S
     KeySchema:
       - AttributeName: userId
         KeyType: HASH
-      - AttributeName: timestamp
+      - AttributeName: historyId
         KeyType: RANGE
     PointInTimeRecoverySpecification:
       PointInTimeRecoveryEnabled: true
@@ -155,40 +151,115 @@ BidHistoryTable:
 
 ### Lambda Functions
 
-#### API Function
+The eBay Sniper application uses 8 individual Lambda functions, each responsible for a specific functionality. This microservices approach provides better scalability, maintainability, and cost optimization.
+
+#### 1. User Management Function
 ```yaml
-ApiFunction:
+UserManagementFunction:
   Type: AWS::Serverless::Function
   Properties:
-    FunctionName: !Sub "${AWS::StackName}-api"
-    CodeUri: src/api/
+    FunctionName: !Sub "${AWS::StackName}-user-management"
+    CodeUri: src/user_management/
     Handler: main.handler
-    Description: Main API handler for eBay Sniper
+    Description: Handle user profile CRUD operations and preferences
+    Timeout: 30
+    MemorySize: 512
     Environment:
       Variables:
         USERS_TABLE: !Ref UsersTable
-        BIDS_TABLE: !Ref BidsTable
-        BID_HISTORY_TABLE: !Ref BidHistoryTable
-        USER_POOL_ID: !Ref UserPool
-        SECRET_ARN: !Ref EbayCredentials
+        CORS_ORIGINS: !Sub "${AmplifyApp}.amplifyapp.com"
     Events:
-      ApiEvent:
+      UserProfileGet:
         Type: HttpApi
         Properties:
           ApiId: !Ref HttpApi
-          Path: /{proxy+}
-          Method: ANY
+          Path: /users/profile
+          Method: GET
+          Auth:
+            Authorizer: CognitoAuthorizer
+      UserProfileUpdate:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /users/profile
+          Method: PUT
+          Auth:
+            Authorizer: CognitoAuthorizer
+      UserPreferencesUpdate:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /users/preferences
+          Method: PUT
+          Auth:
+            Authorizer: CognitoAuthorizer
+      UserAccountDelete:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /users/account
+          Method: DELETE
           Auth:
             Authorizer: CognitoAuthorizer
     Policies:
       - DynamoDBCrudPolicy:
           TableName: !Ref UsersTable
+```
+
+#### 2. eBay OAuth Function
+```yaml
+EbayOAuthFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    FunctionName: !Sub "${AWS::StackName}-ebay-oauth"
+    CodeUri: src/ebay_oauth/
+    Handler: main.handler
+    Description: Manage eBay account linking and OAuth flow
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        USERS_TABLE: !Ref UsersTable
+        SECRET_ARN: !Ref EbayCredentials
+        EBAY_APP_ID: !Ref EbayAppId
+        EBAY_REDIRECT_URI: !Sub "https://${AmplifyApp}.amplifyapp.com/ebay/callback"
+        EBAY_ENVIRONMENT: !Ref Environment
+    Events:
+      AuthUrl:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /ebay/auth/url
+          Method: GET
+          Auth:
+            Authorizer: CognitoAuthorizer
+      AuthCallback:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /ebay/auth/callback
+          Method: POST
+          Auth:
+            Authorizer: CognitoAuthorizer
+      AuthStatus:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /ebay/auth/status
+          Method: GET
+          Auth:
+            Authorizer: CognitoAuthorizer
+      AuthUnlink:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /ebay/auth/unlink
+          Method: DELETE
+          Auth:
+            Authorizer: CognitoAuthorizer
+    Policies:
       - DynamoDBCrudPolicy:
-          TableName: !Ref BidsTable
-      - DynamoDBCrudPolicy:
-          TableName: !Ref BidHistoryTable
-      - EventBridgeSchedulePolicy:
-          ScheduleGroup: !Ref ScheduleGroup
+          TableName: !Ref UsersTable
       - Statement:
           Effect: Allow
           Action:
@@ -196,27 +267,245 @@ ApiFunction:
           Resource: !Ref EbayCredentials
 ```
 
-#### Bid Executor Function
+#### 3. Wishlist Sync Function
+```yaml
+WishlistSyncFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    FunctionName: !Sub "${AWS::StackName}-wishlist-sync"
+    CodeUri: src/wishlist_sync/
+    Handler: main.handler
+    Description: Retrieve and sync eBay wishlist items
+    Timeout: 60
+    MemorySize: 1024
+    Environment:
+      Variables:
+        USERS_TABLE: !Ref UsersTable
+        SECRET_ARN: !Ref EbayCredentials
+        EBAY_ENVIRONMENT: !Ref Environment
+    Events:
+      WishlistItems:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /wishlist/items
+          Method: GET
+          Auth:
+            Authorizer: CognitoAuthorizer
+      WishlistItemDetails:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /wishlist/items/{itemId}
+          Method: GET
+          Auth:
+            Authorizer: CognitoAuthorizer
+    Policies:
+      - DynamoDBReadPolicy:
+          TableName: !Ref UsersTable
+      - Statement:
+          Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+          Resource: !Ref EbayCredentials
+```
+
+#### 4. Bid Management Function
+```yaml
+BidManagementFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    FunctionName: !Sub "${AWS::StackName}-bid-management"
+    CodeUri: src/bid_management/
+    Handler: main.handler
+    Description: Handle bid CRUD operations and scheduling
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        BIDS_TABLE: !Ref BidsTable
+        BID_HISTORY_TABLE: !Ref BidHistoryTable
+        SCHEDULER_GROUP_NAME: !Ref ScheduleGroup
+        BID_EXECUTOR_FUNCTION_ARN: !GetAtt BidExecutorFunction.Arn
+    Events:
+      CreateBid:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /bids
+          Method: POST
+          Auth:
+            Authorizer: CognitoAuthorizer
+      ListBids:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /bids
+          Method: GET
+          Auth:
+            Authorizer: CognitoAuthorizer
+      GetBid:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /bids/{bidId}
+          Method: GET
+          Auth:
+            Authorizer: CognitoAuthorizer
+      UpdateBid:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /bids/{bidId}
+          Method: PUT
+          Auth:
+            Authorizer: CognitoAuthorizer
+      CancelBid:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /bids/{bidId}
+          Method: DELETE
+          Auth:
+            Authorizer: CognitoAuthorizer
+    Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref BidsTable
+      - DynamoDBWritePolicy:
+          TableName: !Ref BidHistoryTable
+      - Statement:
+          Effect: Allow
+          Action:
+            - scheduler:CreateSchedule
+            - scheduler:UpdateSchedule
+            - scheduler:DeleteSchedule
+          Resource: !Sub "arn:aws:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/${ScheduleGroup}/*"
+```
+
+#### 5. Bid History Function
+```yaml
+BidHistoryFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    FunctionName: !Sub "${AWS::StackName}-bid-history"
+    CodeUri: src/bid_history/
+    Handler: main.handler
+    Description: Query and retrieve historical bid data
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        BID_HISTORY_TABLE: !Ref BidHistoryTable
+    Events:
+      BidHistory:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /bid-history
+          Method: GET
+          Auth:
+            Authorizer: CognitoAuthorizer
+      SpecificHistory:
+        Type: HttpApi
+        Properties:
+          ApiId: !Ref HttpApi
+          Path: /bid-history/{bidId}
+          Method: GET
+          Auth:
+            Authorizer: CognitoAuthorizer
+    Policies:
+      - DynamoDBReadPolicy:
+          TableName: !Ref BidHistoryTable
+```
+
+#### 6. Bid Executor Function
 ```yaml
 BidExecutorFunction:
   Type: AWS::Serverless::Function
   Properties:
     FunctionName: !Sub "${AWS::StackName}-bid-executor"
-    CodeUri: src/executor/
+    CodeUri: src/bid_executor/
     Handler: main.handler
-    Description: Executes bids 5 seconds before auction end
-    Timeout: 60
+    Description: Execute scheduled bids, wait for auction completion, and determine bid outcome
+    Timeout: 300
     MemorySize: 1024
     Environment:
       Variables:
         BIDS_TABLE: !Ref BidsTable
         BID_HISTORY_TABLE: !Ref BidHistoryTable
+        USERS_TABLE: !Ref UsersTable
         SECRET_ARN: !Ref EbayCredentials
+        NOTIFICATION_FUNCTION_NAME: !Ref NotificationHandlerFunction
     Policies:
       - DynamoDBCrudPolicy:
           TableName: !Ref BidsTable
-      - DynamoDBCrudPolicy:
+      - DynamoDBReadPolicy:
+          TableName: !Ref UsersTable
+      - DynamoDBWritePolicy:
           TableName: !Ref BidHistoryTable
+      - Statement:
+          Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+          Resource: !Ref EbayCredentials
+      - Statement:
+          Effect: Allow
+          Action:
+            - lambda:InvokeFunction
+          Resource: !GetAtt NotificationHandlerFunction.Arn
+```
+
+#### 7. Notification Handler Function
+```yaml
+NotificationHandlerFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    FunctionName: !Sub "${AWS::StackName}-notification-handler"
+    CodeUri: src/notification_handler/
+    Handler: main.handler
+    Description: Send email notifications when invoked by Bid Executor
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        USERS_TABLE: !Ref UsersTable
+        SECRET_ARN: !Ref EbayCredentials
+    Policies:
+      - DynamoDBReadPolicy:
+          TableName: !Ref UsersTable
+      - Statement:
+          Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+          Resource: !Ref EbayCredentials
+```
+
+#### 8. Token Refresh Function
+```yaml
+TokenRefreshFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    FunctionName: !Sub "${AWS::StackName}-token-refresh"
+    CodeUri: src/token_refresh/
+    Handler: main.handler
+    Description: Automated renewal of eBay OAuth tokens
+    Timeout: 120
+    MemorySize: 512
+    Environment:
+      Variables:
+        USERS_TABLE: !Ref UsersTable
+        SECRET_ARN: !Ref EbayCredentials
+        TOKEN_EXPIRY_THRESHOLD: "7"
+    Events:
+      ScheduledRefresh:
+        Type: ScheduleV2
+        Properties:
+          ScheduleExpression: "rate(1 day)"
+          Name: !Sub "${AWS::StackName}-token-refresh-schedule"
+          Description: "Check and refresh tokens daily"
+    Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref UsersTable
       - Statement:
           Effect: Allow
           Action:
@@ -486,10 +775,10 @@ AmplifyApp:
         phases:
           preBuild:
             commands:
-              - npm ci
+              - pnpm install
           build:
             commands:
-              - npm run build
+              - pnpm run build
         artifacts:
           baseDirectory: .next
           files:
@@ -539,7 +828,6 @@ AmplifyBranch:
 - Stack: `ebay-sniper-prod`
 - API Function: `ebay-sniper-prod-api`
 - Users Table: `ebay-sniper-prod-Users`
-- KMS Key: `alias/ebay-sniper-prod-encryption-key`
 
 ## Environment-Specific Configuration
 
@@ -655,9 +943,9 @@ parameter_overrides = "Environment=prod"
 - Regular policy reviews
 
 ### Data Encryption
-- Encryption at rest (KMS)
+- Encryption at rest (DynamoDB automatic encryption)
 - Encryption in transit (TLS 1.2+)
-- Secure key rotation
+- AWS Secrets Manager handles credential encryption
 - Secrets management
 
 ### Network Security

@@ -82,12 +82,9 @@ python3 -m venv venv
 source venv/bin/activate  # Linux/macOS
 # venv\Scripts\activate     # Windows
 
-# Upgrade pip
-pip install --upgrade pip
-
-# Install dependencies
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+# Install dependencies with uv
+uv pip install -r requirements.txt
+uv pip install -r requirements-dev.txt
 ```
 
 #### Environment Configuration
@@ -270,7 +267,7 @@ if __name__ == "__main__":
 #### LocalStack Setup
 ```bash
 # Install LocalStack
-pip install localstack
+uv pip install localstack
 
 # Create LocalStack configuration
 cat > docker-compose.localstack.yml << 'EOF'
@@ -341,16 +338,12 @@ pytest tests/unit/test_user_service.py -v
 # Run with coverage
 pytest tests/ --cov=src --cov-report=html
 
-# Code formatting
-black src/ tests/
-isort src/ tests/
-
-# Linting
-flake8 src/ tests/
-mypy src/
+# Code formatting and linting
+ruff format src/ tests/
+ruff check src/ tests/
 
 # Type checking
-mypy src/ --strict
+ty src/
 ```
 
 ### 2. Frontend Development
@@ -428,87 +421,6 @@ chmod +x dev-all.sh
 ./dev-all.sh
 ```
 
-## IDE Configuration
-
-### VS Code Setup
-
-#### Recommended Extensions
-```json
-{
-  "recommendations": [
-    "ms-python.python",
-    "ms-python.flake8",
-    "ms-python.black-formatter",
-    "ms-python.mypy-type-checker",
-    "bradlc.vscode-tailwindcss",
-    "esbenp.prettier-vscode",
-    "ms-vscode.vscode-typescript-next",
-    "amazonwebservices.aws-toolkit-vscode",
-    "ms-vscode.vscode-json",
-    "redhat.vscode-yaml"
-  ]
-}
-```
-
-#### VS Code Settings
-```json
-{
-  "python.defaultInterpreterPath": "./backend/venv/bin/python",
-  "python.linting.enabled": true,
-  "python.linting.flake8Enabled": true,
-  "python.formatting.provider": "black",
-  "python.formatting.blackArgs": ["--line-length", "88"],
-  "python.testing.pytestEnabled": true,
-  "python.testing.pytestArgs": ["tests"],
-  "typescript.preferences.importModuleSpecifier": "relative",
-  "editor.formatOnSave": true,
-  "editor.codeActionsOnSave": {
-    "source.organizeImports": true
-  },
-  "files.exclude": {
-    "**/__pycache__": true,
-    "**/.pytest_cache": true,
-    "**/node_modules": true,
-    "**/.next": true
-  }
-}
-```
-
-#### Launch Configuration
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Python: FastAPI",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/backend/scripts/dev-server.py",
-      "console": "integratedTerminal",
-      "envFile": "${workspaceFolder}/backend/.env.local"
-    },
-    {
-      "name": "Python: Tests",
-      "type": "python",
-      "request": "launch",
-      "module": "pytest",
-      "args": ["tests/", "-v"],
-      "console": "integratedTerminal",
-      "cwd": "${workspaceFolder}/backend"
-    }
-  ]
-}
-```
-
-### PyCharm Setup
-
-#### Configuration Steps
-1. Open PyCharm and select "Open" to open the backend directory
-2. Configure Python interpreter: File → Settings → Project → Python Interpreter
-3. Select the virtual environment: `backend/venv/bin/python`
-4. Configure test runner: Settings → Tools → Python Integrated Tools → Testing → pytest
-5. Configure code style: Settings → Editor → Code Style → Python → Use Black formatter
-
 ## Debugging
 
 ### Backend Debugging
@@ -544,31 +456,6 @@ def debug_request(request: Any, response: Any = None):
     if response:
         logger.debug(f"Response Status: {response.status_code}")
         logger.debug(f"Response Body: {response.body}")
-```
-
-#### Debugging Middleware
-```python
-# backend/src/middleware/debug.py
-from fastapi import Request, Response
-from fastapi.middleware.base import BaseHTTPMiddleware
-import time
-import logging
-
-class DebugMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        start_time = time.time()
-        
-        # Log request
-        logging.debug(f"Request: {request.method} {request.url}")
-        
-        # Process request
-        response = await call_next(request)
-        
-        # Log response
-        process_time = time.time() - start_time
-        logging.debug(f"Response: {response.status_code} in {process_time:.4f}s")
-        
-        return response
 ```
 
 ### Frontend Debugging
@@ -705,11 +592,11 @@ if __name__ == "__main__":
 rm -rf venv
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
 # Issue: Module not found
 # Solution: Install in development mode
-pip install -e .
+uv pip install -e .
 ```
 
 #### 2. Node.js Dependencies Issues
@@ -758,11 +645,11 @@ pnpm dev --port 3001
 #### Backend Performance
 ```bash
 # Monitor backend performance
-pip install py-spy
+uv pip install py-spy
 py-spy top --pid $(pgrep -f uvicorn)
 
 # Profile specific requests
-pip install line_profiler
+uv pip install line_profiler
 # Add @profile decorator to functions
 kernprof -l -v src/api/endpoints/users.py
 ```
@@ -784,7 +671,7 @@ lighthouse http://localhost:3000 --view
 #### Pre-commit Hooks
 ```bash
 # Install pre-commit
-pip install pre-commit
+uv pip install pre-commit
 
 # Setup pre-commit hooks
 pre-commit install
@@ -804,22 +691,12 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
 
-  - repo: https://github.com/psf/black
-    rev: 23.1.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.6
     hooks:
-      - id: black
-        language_version: python3.11
-
-  - repo: https://github.com/pycqa/flake8
-    rev: 6.0.0
-    hooks:
-      - id: flake8
-
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.0.1
-    hooks:
-      - id: mypy
-        additional_dependencies: [types-all]
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
 ```
 
 ### Documentation
@@ -827,35 +704,39 @@ repos:
 #### Code Documentation
 - Use docstrings for all functions and classes
 - Include type hints for all function parameters
-- Document API endpoints using FastAPI automatic documentation
+- Document API endpoints using Lambda PowerTools annotations
 - Maintain README files for each major component
 
 #### API Documentation
 ```python
 # Example of well-documented API endpoint
-from fastapi import APIRouter, Depends, HTTPException, status
+from aws_lambda_powertools import Logger, Tracer
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver
+from aws_lambda_powertools.event_handler.exceptions import BadRequestError, NotFoundError, ConflictError
 from typing import List, Optional
 
-@router.post("/bids", response_model=BidResponse, status_code=201)
-async def create_bid(
-    bid_request: CreateBidRequest,
-    current_user: User = Depends(get_current_user)
-) -> BidResponse:
+logger = Logger()
+tracer = Tracer()
+app = APIGatewayRestResolver()
+
+@app.post("/bids")
+@tracer.capture_method
+def create_bid():
     """
     Create a new bid for an eBay auction.
     
-    Args:
-        bid_request: Bid creation request containing item ID and bid amount
-        current_user: Currently authenticated user
+    Request Body:
+        CreateBidRequest: Bid creation request containing item ID and bid amount
         
     Returns:
-        Created bid information
+        BidResponse: Created bid information
         
     Raises:
-        HTTPException: 400 if bid amount is invalid
-        HTTPException: 404 if eBay item not found
-        HTTPException: 409 if user already has active bid for this item
+        BadRequestError: If bid amount is invalid
+        NotFoundError: If eBay item not found
+        ConflictError: If user already has active bid for this item
     """
+    # Implementation
     pass
 ```
 

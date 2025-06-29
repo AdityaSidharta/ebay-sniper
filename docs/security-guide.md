@@ -184,7 +184,7 @@ class SecretsManager:
 ### Input Validation
 
 #### Consolidated Pydantic Validation
-All validation is handled through Pydantic models with built-in FastAPI integration:
+All validation is handled through Pydantic models with Lambda PowerTools integration:
 
 ```python
 from pydantic import BaseModel, Field, validator
@@ -252,7 +252,7 @@ class BidResponse(BaseModel):
 ```
 
 **Validation Strategy:**
-- FastAPI automatically validates requests using Pydantic models
+- Lambda PowerTools automatically validates requests using Pydantic models
 - No duplicate validation layers in service or repository code
 - Business logic validation only for cross-entity rules (e.g., duplicate bids)
 - DynamoDB operations use safe query patterns by default
@@ -323,35 +323,6 @@ class ResponseEncoder:
             return obj
 ```
 
-#### Content Security Policy
-```python
-# FastAPI middleware for CSP headers
-from fastapi import FastAPI, Request, Response
-from fastapi.middleware.base import BaseHTTPMiddleware
-
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        
-        # Content Security Policy
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            "font-src 'self' https://fonts.gstatic.com; "
-            "img-src 'self' data: https:; "
-            "connect-src 'self' https://api.ebay.com;"
-        )
-        
-        # Other security headers
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        
-        return response
-```
-
 ### Rate Limiting
 
 #### API Gateway Throttling
@@ -398,7 +369,7 @@ ApiSecurityGroup:
 ```yaml
 PrivateNetworkAcl:
   Type: AWS::EC2::NetworkAcl
-  Properties:
+  Properties:[security-guide.md](security-guide.md)
     VpcId: !Ref VPC
     Tags:
       - Key: Name

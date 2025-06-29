@@ -163,9 +163,12 @@ AWS_PROFILE=production
 ```bash
 # Backend linting and testing
 cd backend
-black src/ tests/
-flake8 src/ tests/
-mypy src/
+# Code formatting and linting
+ruff format src/ tests/
+ruff check src/ tests/
+
+# Type checking
+ty src/
 pytest tests/ -v
 
 # Frontend linting and testing

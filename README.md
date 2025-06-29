@@ -26,7 +26,6 @@ This is a full-stack serverless application built on AWS:
 
 ### Backend
 - **Runtime**: Python 3.11+ on AWS Lambda
-- **Framework**: FastAPI with Mangum adapter
 - **API Gateway**: HTTP API with Cognito authorization
 - **Database**: Amazon DynamoDB
 - **Scheduling**: AWS EventBridge for automated bid execution
@@ -148,7 +147,7 @@ ebay-sniper/
 │   └── public/              # Static assets
 ├── backend/                  # Python Lambda functions
 │   ├── src/
-│   │   ├── main.py         # FastAPI application entry point
+│   │   ├── main.py         # Lambda application entry point
 │   │   ├── api/            # API route handlers
 │   │   ├── models/         # Data models
 │   │   ├── services/       # Business logic
@@ -243,9 +242,13 @@ uvicorn src.main:app --reload
 
 # Testing
 pytest tests/ -v
-black src/ tests/
-flake8 src/ tests/
-mypy src/
+
+# Code formatting and linting
+ruff format src/ tests/
+ruff check src/ tests/
+
+# Type checking
+ty src/
 
 # Deployment
 sam build
