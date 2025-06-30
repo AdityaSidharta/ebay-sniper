@@ -113,49 +113,12 @@ cd ..
 ```
 
 ### 4. Environment Variables
-Create environment-specific configuration files:
+For comprehensive environment variable configuration, see [environment-variables.md](environment-variables.md).
 
-#### .env.dev
-```bash
-# Development Environment
-ENVIRONMENT=dev
-DEBUG=true
-LOG_LEVEL=DEBUG
-
-# eBay API (Sandbox)
-EBAY_ENVIRONMENT=sandbox
-EBAY_APP_ID=your_dev_app_id
-EBAY_DEV_ID=your_dev_id
-EBAY_CERT_ID=your_dev_cert_id
-
-# Postmark
-POSTMARK_API_KEY=your_dev_postmark_key
-
-# AWS
-AWS_REGION=us-east-1
-AWS_PROFILE=default
-```
-
-#### .env.prod
-```bash
-# Production Environment
-ENVIRONMENT=prod
-DEBUG=false
-LOG_LEVEL=INFO
-
-# eBay API (Production)
-EBAY_ENVIRONMENT=production
-EBAY_APP_ID=your_prod_app_id
-EBAY_DEV_ID=your_prod_dev_id
-EBAY_CERT_ID=your_prod_cert_id
-
-# Postmark
-POSTMARK_API_KEY=your_prod_postmark_key
-
-# AWS
-AWS_REGION=us-east-1
-AWS_PROFILE=production
-```
+Key deployment-specific variables:
+- `ENVIRONMENT`: Set to `dev`, `staging`, or `prod`
+- `EBAY_ENVIRONMENT`: Set to `sandbox` or `production`
+- Sensitive variables (API keys, certificates) are stored in AWS Secrets Manager
 
 ## Pre-Deployment Validation
 
@@ -373,6 +336,8 @@ python scripts/migrate-schema.py --env prod --confirm
 ```
 
 ## Configuration Management
+
+For complete environment variable reference, see [environment-variables.md](environment-variables.md).
 
 ### Parameter Store
 ```bash
@@ -602,23 +567,18 @@ jobs:
 
 ## Security Checklist
 
-### Pre-Deployment Security Review
-- [ ] Secrets stored in AWS Secrets Manager
-- [ ] IAM roles follow least privilege principle
-- [ ] KMS encryption enabled for sensitive data
-- [ ] API Gateway throttling configured
-- [ ] WAF rules implemented
-- [ ] Security groups restrict access
-- [ ] CloudTrail logging enabled
-- [ ] VPC endpoints configured for AWS services
+For comprehensive security guidelines and configurations, see [security-guide.md](security-guide.md).
+
+### Key Pre-Deployment Security Items
+- [ ] Review security configuration in [security-guide.md](security-guide.md)
+- [ ] Verify secrets are stored in AWS Secrets Manager
+- [ ] Confirm IAM roles follow least privilege principle
+- [ ] Validate encryption at rest and in transit
 
 ### Post-Deployment Security Validation
-- [ ] Run security scanner (AWS Inspector)
-- [ ] Test authentication and authorization
-- [ ] Verify encryption at rest and in transit
-- [ ] Check access logs for anomalies
-- [ ] Validate backup and recovery procedures
-- [ ] Review IAM access patterns
+- [ ] Complete security validation checklist in [security-guide.md](security-guide.md)
+- [ ] Run security scanner and address findings
+- [ ] Test authentication and authorization flows
 
 ## Disaster Recovery
 

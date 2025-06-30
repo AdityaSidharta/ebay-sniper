@@ -98,12 +98,13 @@ export function cn(...inputs: ClassValue[]) {
 ```
 
 ## Environment Variables
+For comprehensive environment variable configuration and reference, see [environment-variables.md](environment-variables.md).
+
+Key frontend considerations:
 - Use `.env.local` for local development
 - Prefix client-side variables with `NEXT_PUBLIC_`
 - Access server-side variables only in Server Components or API routes
 - Configure environment variables in AWS Amplify Console under App settings > Environment variables
-- Never commit sensitive environment variables
-- Use AWS Systems Manager Parameter Store for sensitive values when needed
 
 ## AWS Amplify Configuration
 
@@ -169,26 +170,16 @@ module.exports = nextConfig
 - Test accessibility requirements
 
 ## Key Commands
+
+For complete development and deployment commands, see the commands section in [CLAUDE.md](../CLAUDE.md).
+
 ```bash
-# Development
-pnpm dev
-
-# Build (local testing of Amplify build)
-pnpm build
-
-# Production (local)
-pnpm start
-
-# Type checking
-pnpm type-check
-
-# Linting
-pnpm lint
-
-# Amplify CLI commands (if using)
-amplify init
-amplify push
-amplify publish
+# Essential frontend commands
+pnpm dev         # Start development server
+pnpm build       # Build for production
+pnpm test        # Run tests
+pnpm lint        # Lint code
+pnpm type-check  # TypeScript checking
 ```
 
 ## AWS Amplify Integration

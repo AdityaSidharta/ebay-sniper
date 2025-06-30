@@ -23,6 +23,7 @@ graph TB
     BidExecutorLambda[Bid Executor<br/>Lambda Function]
     NotificationLambda[Notification Handler<br/>Lambda Function]
     TokenRefreshLambda[Token Refresh<br/>Lambda Function]
+    PriceUpdateLambda[Price Update<br/>Lambda Function]
     
     %% Data Layer
     UsersTable[Users Table<br/>DynamoDB]
@@ -67,10 +68,15 @@ graph TB
     NotificationLambda --> Postmark
     TokenRefreshLambda --> UsersTable
     TokenRefreshLambda --> eBayAPI
+    PriceUpdateLambda --> BidsTable
+    PriceUpdateLambda --> UsersTable
+    PriceUpdateLambda --> eBayAPI
+    PriceUpdateLambda --> NotificationLambda
     
     %% Scheduled bidding flow
     Scheduler --> BidExecutorLambda
     Scheduler --> TokenRefreshLambda
+    Scheduler --> PriceUpdateLambda
     
     %% Authentication flow
     Cognito -.->|JWT Token| APIGateway
@@ -86,7 +92,7 @@ graph TB
     class Frontend frontend
     class Cognito,APIGateway aws
     class UserMgmtLambda,EbayOAuthLambda,WishlistSyncLambda,BidMgmtLambda,BidHistoryLambda lambda
-    class BidExecutorLambda,NotificationLambda,TokenRefreshLambda lambda
+    class BidExecutorLambda,NotificationLambda,TokenRefreshLambda,PriceUpdateLambda lambda
     class UsersTable,BidsTable,BidHistoryTable data
     class eBayAPI,Postmark external
     class Scheduler scheduler
@@ -108,7 +114,7 @@ graph TB
 
 ### Wishlist Management
 1**Get Wishlist Items**: Frontend → API Gateway → Wishlist Sync Lambda → eBay API → Frontend
-2**Get Item Details**: Frontend → API Gateway → Wishlist Sync Lambda → eBay API → DynamoDB → Frontend
+2**Get Item Details**: Frontend → API Gateway → Wishlist Sync Lambda → eBay API → Frontend
 
 ### Bid Management
 1. **Create Bid**: Frontend → API Gateway → Bid Management Lambda → DynamoDB → EventBridge Scheduler
@@ -125,3 +131,4 @@ graph TB
 ### Automated Execution
 1. **Scheduled Bidding**: EventBridge Scheduler → Bid Executor Lambda → eBay API → DynamoDB → Notification Handler Lambda → Postmark
 2. **Token Refresh**: EventBridge Scheduler → Token Refresh Lambda → eBay API → DynamoDB
+3. **Price Updates**: EventBridge Scheduler → Price Update Lambda → eBay API → DynamoDB → Notification Handler Lambda → Postmark

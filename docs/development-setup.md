@@ -88,6 +88,8 @@ uv pip install -r requirements-dev.txt
 ```
 
 #### Environment Configuration
+For comprehensive environment variable reference, see [environment-variables.md](environment-variables.md).
+
 ```bash
 # Copy environment template
 cp .env.template .env.local
@@ -96,18 +98,10 @@ cp .env.template .env.local
 nano .env.local  # or use your preferred editor
 ```
 
-#### Environment Variables (.env.local)
-```bash
-# Minimal required configuration for local development
-DEBUG=true
-DYNAMODB_ENDPOINT=http://localhost:8000
-POSTMARK_API_KEY=your_test_postmark_key
-EBAY_APP_ID=your_sandbox_app_id
-
-# Optional - defaults are provided in code
-CORS_ORIGINS=http://localhost:3000
-AWS_REGION=us-east-1
-```
+Key variables for local development:
+- `DEBUG=true`
+- `DYNAMODB_ENDPOINT=http://localhost:8000`
+- `EBAY_ENVIRONMENT=sandbox`
 
 #### Generate Security Keys
 ```bash
@@ -129,6 +123,8 @@ pnpm install
 ```
 
 #### Frontend Environment Configuration
+For comprehensive environment variable reference, see [environment-variables.md](environment-variables.md).
+
 ```bash
 # Copy environment template
 cp .env.template .env.local
@@ -137,23 +133,10 @@ cp .env.template .env.local
 nano .env.local
 ```
 
-#### Frontend Environment Variables (.env.local)
-```bash
-# API Configuration
-NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# AWS Cognito Configuration
-NEXT_PUBLIC_AWS_REGION=us-east-1
-NEXT_PUBLIC_USER_POOL_ID=us-east-1_xxxxxxxxx
-NEXT_PUBLIC_USER_POOL_CLIENT_ID=your_client_id
-
-# eBay Configuration
-NEXT_PUBLIC_EBAY_ENVIRONMENT=sandbox
-
-# Feature Flags
-NEXT_PUBLIC_ENABLE_ANALYTICS=false
-NEXT_PUBLIC_ENABLE_DEBUG=true
-```
+Key frontend variables for local development:
+- `NEXT_PUBLIC_API_URL=http://localhost:8000`
+- `NEXT_PUBLIC_EBAY_ENVIRONMENT=sandbox`
+- `NEXT_PUBLIC_ENABLE_DEBUG=true`
 
 ## Local Development Infrastructure
 

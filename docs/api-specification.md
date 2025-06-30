@@ -29,36 +29,19 @@ Content-Type: application/json
 }
 ```
 
-## Lambda Function Architecture
-
-The eBay Sniper application uses **8 individual Lambda functions** with single responsibility design:
-
-### **API Endpoint Lambda Functions** (5):
-- **User Management Lambda**: `/users/*` endpoints
-- **eBay OAuth Lambda**: `/ebay/auth/*` endpoints  
-- **Wishlist Sync Lambda**: `/wishlist/*` endpoints
-- **Bid Management Lambda**: `/bids/*` endpoints
-- **Bid History Lambda**: `/bid-history/*` endpoints
-
-### **Background/Scheduled Lambda Functions** (3):
-- **Bid Executor Lambda**: Executes scheduled bids and determines outcomes (triggered by EventBridge)
-- **Notification Handler Lambda**: Sends email notifications (invoked by Bid Executor)
-- **Token Refresh Lambda**: Refreshes eBay OAuth tokens (triggered by EventBridge daily)
-
 ## API Endpoints Documentation
 
-The following sections document the HTTP endpoints handled by the 5 API Lambda functions:
+The eBay Sniper application provides RESTful HTTP endpoints organized by functional area. For detailed Lambda function specifications and implementation details, see [backend.md](backend.md).
+
+The following sections document all available HTTP endpoints:
 
 ---
 
-## User Management Lambda
-
-Handles user profile CRUD operations and preference management.
+## User Management Endpoints
 
 ### GET /users/profile
 Get current user profile information.
 
-**Lambda Function**: `user-management`  
 **Headers**: Requires authentication
 
 **Response 200**:
@@ -85,7 +68,6 @@ Get current user profile information.
 ### PUT /users/profile
 Update current user profile.
 
-**Lambda Function**: `user-management`  
 **Headers**: Requires authentication
 
 **Request Body**:
@@ -119,7 +101,6 @@ Update current user profile.
 ### PUT /users/preferences
 Update user notification preferences.
 
-**Lambda Function**: `user-management`  
 **Headers**: Requires authentication
 
 **Request Body**:
@@ -155,7 +136,6 @@ Update user notification preferences.
 ### DELETE /users/account
 Delete current user account and all associated data.
 
-**Lambda Function**: `user-management`  
 **Headers**: Requires authentication
 
 **Response 204**: No content
@@ -165,14 +145,11 @@ Delete current user account and all associated data.
 
 ---
 
-## eBay OAuth Lambda
-
-Manages eBay account linking, OAuth authorization flow, and token management.
+## eBay Authentication Endpoints
 
 ### GET /ebay/auth/url
 Generate eBay OAuth authorization URL.
 
-**Lambda Function**: `ebay-oauth`  
 **Headers**: Requires authentication
 
 **Response 200**:
@@ -189,7 +166,6 @@ Generate eBay OAuth authorization URL.
 ### POST /ebay/auth/callback
 Handle eBay OAuth callback and exchange code for tokens.
 
-**Lambda Function**: `ebay-oauth`  
 **Headers**: Requires authentication
 
 **Request Body**:
@@ -219,7 +195,6 @@ Handle eBay OAuth callback and exchange code for tokens.
 ### GET /ebay/auth/status
 Check current eBay account linking status.
 
-**Lambda Function**: `ebay-oauth`  
 **Headers**: Requires authentication
 
 **Response 200**:
@@ -235,7 +210,6 @@ Check current eBay account linking status.
 ### DELETE /ebay/auth/unlink
 Unlink eBay account from user profile.
 
-**Lambda Function**: `ebay-oauth`  
 **Headers**: Requires authentication
 
 **Response 204**: No content
@@ -245,14 +219,11 @@ Unlink eBay account from user profile.
 
 ---
 
-## Wishlist Sync Lambda
-
-Retrieves and syncs eBay wishlist items, filtering for active auctions.
+## Wishlist Endpoints
 
 ### GET /wishlist/items
 Get synchronized wishlist items.
 
-**Lambda Function**: `wishlist-sync`  
 **Headers**: Requires authentication
 
 **Query Parameters**:
@@ -292,7 +263,6 @@ Get synchronized wishlist items.
 ### GET /wishlist/items/{itemId}
 Get specific item details from wishlist.
 
-**Lambda Function**: `wishlist-sync`  
 **Headers**: Requires authentication
 
 **Path Parameters**:
@@ -323,14 +293,11 @@ Get specific item details from wishlist.
 
 ---
 
-## Bid Management Lambda
-
-Handles bid CRUD operations and schedules bid execution.
+## Bid Management Endpoints
 
 ### POST /bids
 Create a new bid for an auction item.
 
-**Lambda Function**: `bid-management`  
 **Headers**: Requires authentication
 
 **Request Body**:
@@ -354,7 +321,9 @@ Create a new bid for an auction item.
   "updatedAt": 1640990000,
   "itemTitle": "Vintage Camera",
   "itemImageUrl": "https://i.ebayimg.com/...",
-  "currentPrice": 20000
+  "currentPrice": 20000,
+  "lastAlertSent": null,
+  "lastAlertBidAmount": null
 }
 ```
 
@@ -367,7 +336,6 @@ Create a new bid for an auction item.
 ### GET /bids
 List user's active bids.
 
-**Lambda Function**: `bid-management`  
 **Headers**: Requires authentication
 
 **Query Parameters**:
@@ -390,7 +358,9 @@ List user's active bids.
       "updatedAt": 1640990000,
       "itemTitle": "Vintage Camera",
       "itemImageUrl": "https://i.ebayimg.com/...",
-      "currentPrice": 20000
+      "currentPrice": 20000,
+      "lastAlertSent": null,
+      "lastAlertBidAmount": null
     }
   ],
   "pagination": {
@@ -405,7 +375,6 @@ List user's active bids.
 ### GET /bids/{bidId}
 Get specific bid details.
 
-**Lambda Function**: `bid-management`  
 **Headers**: Requires authentication
 
 **Path Parameters**:
@@ -424,7 +393,9 @@ Get specific bid details.
   "updatedAt": 1640990000,
   "itemTitle": "Vintage Camera",
   "itemImageUrl": "https://i.ebayimg.com/...",
-  "currentPrice": 20000
+  "currentPrice": 20000,
+  "lastAlertSent": null,
+  "lastAlertBidAmount": null
 }
 ```
 
@@ -434,7 +405,6 @@ Get specific bid details.
 ### PUT /bids/{bidId}
 Update bid amount.
 
-**Lambda Function**: `bid-management`  
 **Headers**: Requires authentication
 
 **Path Parameters**:
@@ -460,7 +430,9 @@ Update bid amount.
   "updatedAt": 1640991000,
   "itemTitle": "Vintage Camera",
   "itemImageUrl": "https://i.ebayimg.com/...",
-  "currentPrice": 20000
+  "currentPrice": 20000,
+  "lastAlertSent": null,
+  "lastAlertBidAmount": null
 }
 ```
 
@@ -473,7 +445,6 @@ Update bid amount.
 ### DELETE /bids/{bidId}
 Cancel a pending bid.
 
-**Lambda Function**: `bid-management`  
 **Headers**: Requires authentication
 
 **Path Parameters**:
@@ -488,14 +459,11 @@ Cancel a pending bid.
 
 ---
 
-## Bid History Lambda
-
-Queries and retrieves historical bid data with pagination and filtering.
+## Bid History Endpoints
 
 ### GET /bid-history
 Get user's bid history.
 
-**Lambda Function**: `bid-history`  
 **Headers**: Requires authentication
 
 **Query Parameters**:
@@ -535,7 +503,6 @@ Get user's bid history.
 ### GET /bid-history/{bidId}
 Get history for a specific bid.
 
-**Lambda Function**: `bid-history`  
 **Headers**: Requires authentication
 
 **Path Parameters**:
@@ -601,7 +568,8 @@ Health check endpoint (public, no authentication required).
     "bidHistory": "healthy",
     "bidExecutor": "healthy",
     "notificationHandler": "healthy",
-    "tokenRefresh": "healthy"
+    "tokenRefresh": "healthy",
+    "priceUpdate": "healthy"
   },
   "services": {
     "dynamodb": "healthy",
@@ -614,9 +582,9 @@ Health check endpoint (public, no authentication required).
 ```
 
 **Notes**:
-- The health check monitors all 8 Lambda functions including background/scheduled functions
-- Background Lambda functions are checked via CloudWatch metrics and last execution status
-- API endpoint Lambda functions are checked via direct invocation
+- The health check monitors all backend services and external integrations
+- For detailed Lambda function specifications, see [backend.md](backend.md)
+- For infrastructure details, see [aws-infrastructure.md](aws-infrastructure.md)
 
 ---
 

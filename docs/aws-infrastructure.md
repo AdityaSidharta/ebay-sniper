@@ -61,6 +61,8 @@ Globals:
 
 ### DynamoDB Tables
 
+For detailed database schema and data models, see [database-schema.md](database-schema.md). The following SAM templates define the table infrastructure:
+
 #### Users Table
 ```yaml
 UsersTable:
@@ -151,9 +153,9 @@ BidHistoryTable:
 
 ### Lambda Functions
 
-The eBay Sniper application uses 8 individual Lambda functions, each responsible for a specific functionality. This microservices approach provides better scalability, maintainability, and cost optimization.
+The eBay Sniper application uses 9 individual Lambda functions. For detailed function specifications and implementation details, see [backend.md](backend.md). The following SAM templates define the infrastructure configuration:
 
-#### 1. User Management Function
+#### User Management Function
 ```yaml
 UserManagementFunction:
   Type: AWS::Serverless::Function
@@ -206,7 +208,7 @@ UserManagementFunction:
           TableName: !Ref UsersTable
 ```
 
-#### 2. eBay OAuth Function
+#### eBay OAuth Function
 ```yaml
 EbayOAuthFunction:
   Type: AWS::Serverless::Function
@@ -267,7 +269,7 @@ EbayOAuthFunction:
           Resource: !Ref EbayCredentials
 ```
 
-#### 3. Wishlist Sync Function
+#### Wishlist Sync Function
 ```yaml
 WishlistSyncFunction:
   Type: AWS::Serverless::Function
@@ -310,7 +312,7 @@ WishlistSyncFunction:
           Resource: !Ref EbayCredentials
 ```
 
-#### 4. Bid Management Function
+#### Bid Management Function
 ```yaml
 BidManagementFunction:
   Type: AWS::Serverless::Function
@@ -382,7 +384,7 @@ BidManagementFunction:
           Resource: !Sub "arn:aws:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/${ScheduleGroup}/*"
 ```
 
-#### 5. Bid History Function
+#### Bid History Function
 ```yaml
 BidHistoryFunction:
   Type: AWS::Serverless::Function
@@ -418,7 +420,7 @@ BidHistoryFunction:
           TableName: !Ref BidHistoryTable
 ```
 
-#### 6. Bid Executor Function
+#### Bid Executor Function
 ```yaml
 BidExecutorFunction:
   Type: AWS::Serverless::Function
@@ -455,7 +457,7 @@ BidExecutorFunction:
           Resource: !GetAtt NotificationHandlerFunction.Arn
 ```
 
-#### 7. Notification Handler Function
+#### Notification Handler Function
 ```yaml
 NotificationHandlerFunction:
   Type: AWS::Serverless::Function
@@ -480,7 +482,7 @@ NotificationHandlerFunction:
           Resource: !Ref EbayCredentials
 ```
 
-#### 8. Token Refresh Function
+#### Token Refresh Function
 ```yaml
 TokenRefreshFunction:
   Type: AWS::Serverless::Function
@@ -511,6 +513,50 @@ TokenRefreshFunction:
           Action:
             - secretsmanager:GetSecretValue
           Resource: !Ref EbayCredentials
+```
+
+#### Price Update Function
+```yaml
+PriceUpdateFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    FunctionName: !Sub "${AWS::StackName}-price-update"
+    CodeUri: src/price_update/
+    Handler: main.handler
+    Description: Scheduled price monitoring and alerting for active bids
+    Timeout: 300
+    MemorySize: 1024
+    Environment:
+      Variables:
+        BIDS_TABLE: !Ref BidsTable
+        USERS_TABLE: !Ref UsersTable
+        SECRET_ARN: !Ref EbayCredentials
+        NOTIFICATION_FUNCTION_NAME: !Ref NotificationHandlerFunction
+        EBAY_ENVIRONMENT: !Ref Environment
+    Events:
+      ScheduledPriceUpdate:
+        Type: ScheduleV2
+        Properties:
+          ScheduleExpression: "rate(1 day)"
+          Name: !Sub "${AWS::StackName}-price-update-schedule"
+          Description: "Update current prices for active bids every 1 day"
+    Policies:
+      - DynamoDBReadPolicy:
+          TableName: !Ref BidsTable
+      - DynamoDBWritePolicy:
+          TableName: !Ref BidsTable
+      - DynamoDBReadPolicy:
+          TableName: !Ref UsersTable
+      - Statement:
+          Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+          Resource: !Ref EbayCredentials
+      - Statement:
+          Effect: Allow
+          Action:
+            - lambda:InvokeFunction
+          Resource: !GetAtt NotificationHandlerFunction.Arn
 ```
 
 ### API Gateway Configuration
@@ -934,25 +980,15 @@ parameter_overrides = "Environment=prod"
 - Log retention policies (30 days default)
 - Search and alerting capabilities
 
-## Security Best Practices
+## Security Configuration
 
-### IAM Policies
-- Principle of least privilege
-- Service-specific roles
-- Resource-level permissions
-- Regular policy reviews
+For comprehensive security guidelines, policies, and configurations, see [security-guide.md](security-guide.md).
 
-### Data Encryption
-- Encryption at rest (DynamoDB automatic encryption)
-- Encryption in transit (TLS 1.2+)
-- AWS Secrets Manager handles credential encryption
-- Secrets management
-
-### Network Security
-- VPC endpoints for AWS services
-- Security groups and NACLs
-- API Gateway throttling
-- WAF protection
+Key AWS security features implemented:
+- DynamoDB encryption at rest (automatic)
+- AWS Secrets Manager for credential storage
+- Cognito JWT authentication
+- API Gateway throttling and CORS configuration
 
 ## Cost Optimization
 

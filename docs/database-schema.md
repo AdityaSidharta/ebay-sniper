@@ -53,6 +53,8 @@ The application uses multiple DynamoDB tables optimized for different access pat
 | itemTitle | String | - | eBay item title (cached) |
 | itemImageUrl | String | - | eBay item image URL (cached) |
 | currentPrice | Number | - | Last known current price in cents |
+| lastAlertSent | Number | - | Unix timestamp of last price alert sent |
+| lastAlertBidAmount | Number | - | Bid amount when last price alert was sent |
 | ttl | Number | - | TTL for completed bids (Unix timestamp) |
 
 ### BidHistory Table
@@ -142,6 +144,8 @@ interface Bid {
   itemTitle: string;
   itemImageUrl?: string;
   currentPrice: number; // in cents
+  lastAlertSent?: number; // Unix timestamp of last price alert
+  lastAlertBidAmount?: number; // Bid amount when last alert was sent
 }
 ```
 

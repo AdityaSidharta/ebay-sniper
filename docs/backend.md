@@ -124,6 +124,8 @@ def handler(event, context):
 - Monitor Lambda Insights for optimization opportunities
 
 ### Configuration
+For comprehensive environment variable configuration and reference, see [environment-variables.md](environment-variables.md).
+
 ```python
 # src/core/config.py
 import os
@@ -136,99 +138,41 @@ DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 # CORS - defaults to common origins
 ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 
-# Required environment variables (set by Lambda)  
-USERS_TABLE = os.getenv("USERS_TABLE")
-BIDS_TABLE = os.getenv("BIDS_TABLE")
-BID_HISTORY_TABLE = os.getenv("BID_HISTORY_TABLE")
-POSTMARK_API_KEY = os.getenv("POSTMARK_API_KEY")  # Required from Secrets Manager
-EBAY_APP_ID = os.getenv("EBAY_APP_ID")  # Required from Secrets Manager
+# Environment variables are configured via Lambda environment
+# See environment-variables.md for complete reference
 ```
 
 ## API Design Patterns
 
-### RESTful Endpoints
+For complete HTTP API endpoint specifications, request/response models, and examples, see [api-specification.md](api-specification.md).
+
+### Implementation Pattern
 ```python
 from aws_lambda_powertools import Logger, Tracer
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver
 from aws_lambda_powertools.event_handler.exceptions import BadRequestError, NotFoundError
-from aws_lambda_powertools.logging import correlation_paths
-from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
-import boto3
-from boto3.dynamodb.conditions import Key, Attr
-import uuid
-import time
 
 logger = Logger()
 tracer = Tracer()
 app = APIGatewayRestResolver()
 
 # Pydantic models handle ALL validation - no duplicate layers
-class ItemCreate(BaseModel):
-    title: str = Field(..., min_length=1, max_length=255)
-    description: str = Field(..., max_length=2000)
-    price: int = Field(..., ge=1, le=10000000)  # $0.01 to $100,000
+class CreateRequest(BaseModel):
+    field: str = Field(..., min_length=1, max_length=255)
+    amount: int = Field(..., ge=1, le=10000000)
 
-class ItemResponse(BaseModel):
-    id: str
-    title: str
-    description: str
-    price: int
-    created_at: int
-    user_id: str
-
-@app.get("/items")
+@app.post("/resource")
 @tracer.capture_method
-def list_items():
-    """List items with pagination and search - validation handled by Lambda PowerTools"""
-    # Get query parameters
-    skip = int(app.current_event.get_query_string_value("skip", "0"))
-    limit = int(app.current_event.get_query_string_value("limit", "10"))
-    search = app.current_event.get_query_string_value("search")
-    
-    # Get current user from JWT context
-    current_user = app.lambda_context.current_user
-    
-    # Direct DynamoDB operations with safe query patterns
-    dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table('items')
-    
-    # Safe query - no additional validation needed
-    query_params = {'Limit': limit}
-    if skip > 0:
-        # Implementation for pagination
-        pass
-    
-    response = table.scan(**query_params)
-    return {"items": response.get('Items', [])}
-
-@app.post("/items")
-@tracer.capture_method
-def create_item():
-    """Create a new item - no duplicate validation layers"""
-    # Parse and validate request body
+def create_resource():
+    """Implementation pattern - validation handled by Pydantic automatically"""
     raw_body = app.current_event.json_body
-    item = ItemCreate(**raw_body)  # Pydantic handles all validation automatically
+    request = CreateRequest(**raw_body)  # Pydantic handles all validation
     
-    # Get current user from JWT context
-    current_user = app.lambda_context.current_user
+    # Direct operations - validation already complete
+    # Implementation logic here
     
-    # Direct DynamoDB operation - Pydantic already validated input
-    dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table('items')
-    
-    item_data = {
-        'id': str(uuid.uuid4()),
-        'user_id': current_user['sub'],
-        'title': item.title,
-        'description': item.description,
-        'price': item.price,
-        'created_at': int(time.time())
-    }
-    
-    # Safe operation - no additional validation needed
-    table.put_item(Item=item_data)
-    return ItemResponse(**item_data).dict()
+    return {"status": "success"}
 ```
 
 ### Authentication (API Gateway Handles JWT)
@@ -439,13 +383,13 @@ def handler(event, context):
 
 ## Security Best Practices
 
-- Never log sensitive information (passwords, tokens, PII)
-- Use AWS Secrets Manager or Parameter Store for secrets
-- Implement rate limiting using API Gateway
+For comprehensive security guidelines, implementations, and configurations, see [security-guide.md](security-guide.md).
+
+Key backend security considerations:
 - Validate all inputs using Pydantic models
-- Use least privilege IAM roles
-- Enable AWS WAF for API Gateway
-- Implement request signing for service-to-service calls
+- Use AWS Secrets Manager for credential storage
+- Implement least privilege IAM roles
+- Never log sensitive information (passwords, tokens, PII)
 
 ## Performance Optimization
 
@@ -488,24 +432,15 @@ def create_response(
 
 ## Key Commands
 
+For complete development and deployment commands, see the commands section in [CLAUDE.md](../CLAUDE.md).
+
 ```bash
-# Local development
-uv pip install -r requirements.txt
-python -c "from src.main import lambda_handler; lambda_handler({'httpMethod': 'GET', 'path': '/health'}, {})"
-
-# Testing
-pytest tests/
-pytest tests/unit/ -v
-pytest tests/integration/ -v
-
-# Linting and formatting
-ruff format src/ tests/
-ruff check src/ tests/
-ty src/
-
-# Deployment
-sam build
-sam deploy --guided
+# Essential backend commands
+pytest tests/                    # Run backend tests  
+ruff format src/ tests/         # Format Python code
+ruff check src/ tests/          # Lint Python code  
+ty src/                         # Type checking
+uvicorn src.main:app --reload   # Start development server
 ```
 
 ## Lambda Functions Architecture
@@ -530,6 +465,7 @@ Bid Executor Lambda → Direct Invocation → Notification Handler Lambda → Em
 6. **Bid Executor Lambda** - Scheduled bid execution
 7. **Notification Handler Lambda** - Email notifications
 8. **Token Refresh Lambda** - OAuth token renewal
+9. **Price Update Lambda** - Scheduled price monitoring and alerting
 
 ---
 
@@ -564,9 +500,7 @@ class PreferencesUpdate(BaseModel):
     timezone: Optional[str] = None
 ```
 
-**Environment Variables**:
-- `USERS_TABLE` - DynamoDB table name
-- `CORS_ORIGINS` - Allowed CORS origins
+**Environment Variables**: See [environment-variables.md](environment-variables.md) for complete reference
 
 **IAM Permissions**:
 - DynamoDB: GetItem, PutItem, UpdateItem, DeleteItem on Users table
@@ -609,12 +543,7 @@ class EbayAccountStatus(BaseModel):
     tokenExpiresAt: Optional[int] = None
 ```
 
-**Environment Variables**:
-- `EBAY_APP_ID` - eBay application ID
-- `EBAY_REDIRECT_URI` - OAuth redirect URI
-- `EBAY_ENVIRONMENT` - sandbox/production
-- `USERS_TABLE` - DynamoDB table name
-- `SECRET_ARN` - AWS Secrets Manager ARN for eBay credentials
+**Environment Variables**: See [environment-variables.md](environment-variables.md) for complete reference
 
 **IAM Permissions**:
 - DynamoDB: GetItem, UpdateItem on Users table
@@ -657,10 +586,7 @@ class WishlistResponse(BaseModel):
     totalItems: int
 ```
 
-**Environment Variables**:
-- `USERS_TABLE` - DynamoDB table name
-- `SECRET_ARN` - AWS Secrets Manager ARN for eBay credentials
-- `EBAY_ENVIRONMENT` - sandbox/production
+**Environment Variables**: See [environment-variables.md](environment-variables.md) for complete reference
 
 **IAM Permissions**:
 - DynamoDB: GetItem on Users table
@@ -679,7 +605,7 @@ class WishlistResponse(BaseModel):
 
 ### 4. Bid Management Lambda
 
-**Purpose**: Handle bid CRUD operations and schedule bid execution.
+**Purpose**: Handle bid CRUD operations and schedule bid execution. Resets price alert tracking when user updates bid amount to allow new alerts for updated bid levels.
 
 **Trigger**: API Gateway HTTP events
 - `POST /bids` - Create new bid
@@ -709,13 +635,11 @@ class BidResponse(BaseModel):
     itemTitle: Optional[str] = None
     itemImageUrl: Optional[str] = None
     currentPrice: Optional[int] = None
+    lastAlertSent: Optional[int] = None  # Unix timestamp of last price alert
+    lastAlertBidAmount: Optional[int] = None  # Bid amount when last alert was sent
 ```
 
-**Environment Variables**:
-- `BIDS_TABLE` - DynamoDB bids table name
-- `BID_HISTORY_TABLE` - DynamoDB bid history table name
-- `SCHEDULER_GROUP_NAME` - EventBridge scheduler group
-- `BID_EXECUTOR_FUNCTION_ARN` - Target Lambda function
+**Environment Variables**: See [environment-variables.md](environment-variables.md) for complete reference
 
 **IAM Permissions**:
 - DynamoDB: GetItem, PutItem, UpdateItem, DeleteItem, Query on Bids table
@@ -759,8 +683,7 @@ class BidHistoryResponse(BaseModel):
 
 ```
 
-**Environment Variables**:
-- `BID_HISTORY_TABLE` - DynamoDB bid history table name
+**Environment Variables**: See [environment-variables.md](environment-variables.md) for complete reference
 
 **IAM Permissions**:
 - DynamoDB: Query on BidHistory table
@@ -803,12 +726,7 @@ class BidExecutionResult(BaseModel):
     outcomeCheckedAt: Optional[int] = None
 ```
 
-**Environment Variables**:
-- `BIDS_TABLE` - DynamoDB bids table name
-- `BID_HISTORY_TABLE` - DynamoDB bid history table name
-- `USERS_TABLE` - DynamoDB users table name
-- `SECRET_ARN` - AWS Secrets Manager ARN for eBay credentials
-- `NOTIFICATION_FUNCTION_NAME` - Notification Handler Lambda function name
+**Environment Variables**: See [environment-variables.md](environment-variables.md) for complete reference
 
 **IAM Permissions**:
 - DynamoDB: GetItem, UpdateItem on Bids table
@@ -855,9 +773,7 @@ class EmailNotification(BaseModel):
     templateData: Dict[str, Any]
 ```
 
-**Environment Variables**:
-- `USERS_TABLE` - DynamoDB users table name
-- `SECRET_ARN` - AWS Secrets Manager ARN for Postmark API key
+**Environment Variables**: See [environment-variables.md](environment-variables.md) for complete reference
 
 **IAM Permissions**:
 - DynamoDB: GetItem on Users table
@@ -895,10 +811,7 @@ class UserTokenStatus(BaseModel):
     error: Optional[str] = None
 ```
 
-**Environment Variables**:
-- `USERS_TABLE` - DynamoDB users table name
-- `SECRET_ARN` - AWS Secrets Manager ARN for eBay credentials
-- `TOKEN_EXPIRY_THRESHOLD` - Days before expiry to refresh (default: 7)
+**Environment Variables**: See [environment-variables.md](environment-variables.md) for complete reference
 
 **IAM Permissions**:
 - DynamoDB: Scan, UpdateItem on Users table
@@ -912,6 +825,69 @@ class UserTokenStatus(BaseModel):
 - Database update failures
 
 **Performance**: Memory: 512MB, Timeout: 120s (2 minutes)
+
+---
+
+### 9. Price Update Lambda
+
+**Purpose**: Scheduled price monitoring and alerting for active bids. Uses smart alert logic to notify users when current price exceeds their bid amount, but only sends alerts on first occurrence or after user updates their bid amount.
+
+**Trigger**: EventBridge scheduled rule (every 1 day)
+
+**Request/Response Models**:
+```python
+class PriceUpdateResult(BaseModel):
+    bidsProcessed: int
+    priceUpdates: int
+    alertsSent: int
+    failures: int
+    executionTime: float
+
+class PriceAlertNotification(BaseModel):
+    bidId: str
+    userId: str
+    notificationType: str  # "PRICE_ALERT"
+    ebayItemId: str
+    bidAmount: int
+    currentPrice: int
+    itemTitle: str
+    priceExcess: int  # amount by which current price exceeds bid
+```
+
+**Environment Variables**: See [environment-variables.md](environment-variables.md) for complete reference
+
+**IAM Permissions**:
+- DynamoDB: Scan, UpdateItem on Bids table (to update currentPrice)
+- DynamoDB: GetItem on Users table (to get eBay tokens)
+- Secrets Manager: GetSecretValue
+- Lambda: InvokeFunction on Notification Handler Lambda
+- CloudWatch: Logs and metrics
+
+**Error Handling**:
+- eBay API rate limiting and failures
+- Token expiration during price fetch
+- Database update failures
+- Notification delivery failures
+- Network timeouts with retry logic
+
+**Performance**: Memory: 1024MB, Timeout: 300s (5 minutes - to handle multiple API calls)
+
+**Smart Alert Logic**:
+- Sends price alert when current price first exceeds user's bid amount
+- Prevents notification spam by tracking last alert sent (`lastAlertSent`, `lastAlertBidAmount`)
+- Does NOT send repeated alerts for continued price increases on same bid amount
+- Resets alert tracking when user updates their bid amount (via Bid Management Lambda)
+- Sends new alert only if price exceeds the updated bid amount
+- Updates alert tracking fields after sending notifications
+
+**Key Features**:
+- Scans all PENDING bids across all users
+- Fetches current prices from eBay API using user tokens
+- Updates cached currentPrice in Bids table when changed
+- Implements smart alert deduplication to prevent email spam
+- Tracks alert history with `lastAlertSent` and `lastAlertBidAmount` fields
+- Implements retry logic for eBay API failures
+- Tracks metrics for monitoring (bids processed, alerts sent, failures)
 
 ---
 
